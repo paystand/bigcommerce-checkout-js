@@ -1,0 +1,20 @@
+{
+  "name": "paystand-integration",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/paystand-integration/src",
+  "projectType": "library",
+  "targets": {
+    "lint": {
+      "executor": "@nx/eslint:lint",
+      "outputs": ["{options.outputFile}"]
+    },
+    "test": {
+      "executor": "@nx/jest:jest",
+      "outputs": ["{workspaceRoot}/coverage/packages/paystand-integration"],
+      "options": {
+        "jestConfig": "packages/paystand-integration/jest.config.js"
+      }
+    }
+  },
+  "tags": ["scope:integration"]
+}
