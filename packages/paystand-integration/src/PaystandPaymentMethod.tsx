@@ -193,6 +193,37 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                     const tokenResponse = customEvent.detail.token;
                     const paymentMethodType = feeCalculator.determinePaymentMethodType(tokenResponse);
 
+                    // 📊 LOG CAPTURED DATA FROM MODAL
+                    const capturedData = {
+                        tokenId: tokenResponse.id,
+                        type: paymentMethodType,
+                        ...(tokenResponse.card && {
+                            card: {
+                                name: tokenResponse.card.nameOnCard,
+                                brand: tokenResponse.card.brand,
+                                last4: tokenResponse.card.last4,
+                                expiry: `${tokenResponse.card.expirationMonth}/${tokenResponse.card.expirationYear}`,
+                                billingAddress: tokenResponse.card.billingAddress,
+                            },
+                        }),
+                        ...(tokenResponse.bank && {
+                            bank: {
+                                name: tokenResponse.bank.nameOnAccount,
+                                accountType: tokenResponse.bank.accountType,
+                                accountHolderType: tokenResponse.bank.accountHolderType,
+                                bankName: tokenResponse.bank.bankName,
+                                routingNumber: tokenResponse.bank.routingNumber,
+                                last4: tokenResponse.bank.last4,
+                                verified: tokenResponse.bank.verified,
+                                billingAddress: tokenResponse.bank.billingAddress,
+                            },
+                        }),
+                        timestamp: new Date().toISOString(),
+                    };
+
+                    // eslint-disable-next-line no-console
+                    console.log('🎯 PAYSTAND MODAL DATA CAPTURED:', capturedData);
+
                     const tokenData: PaystandTokenData = {
                         tokenId: tokenResponse.id as string,
                         paymentMethodType,
