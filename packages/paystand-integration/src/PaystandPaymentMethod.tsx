@@ -17,21 +17,56 @@ import {
 import { PaystandOrderService } from './PaystandOrderService';
 
 const PAYSTAND_SCRIPT_ID = 'paystand_checkout';
-const PAYSTAND_SCRIPT_SRC = 'https://checkout.paystand.biz/v4/js/paystand.checkout.js';
+const PAYSTAND_SCRIPT_SRC = 'https://checkout.paystand.co/v4/js/paystand.checkout.js';
+const PAYSTAND_CONFIG_ENDPOINT = 'https://de5a53673321.ngrok-free.app/api/paystand-config';
 
-// Configuration - in a real implementation, these would come from method configuration
-const PAYSTAND_CONFIG = {
-    publishableKey: 'l8mug63855x4ow0xeo669zhf',
-    feeSettingPlanId: 'qr4gmsa22s9emxz6atwdyfos',
-    dynamicDiscountingPlanId: '2nmhwx9kzjbvkp3kqfcyor7i',
-    environment: 'development' as const,
-};
+interface PaystandConfig {
+    publishableKey: string;
+    presetCustom: string;
+    customerId: string;
+    updateOrderOn: string;
+    useSandbox?: number; // Optional in case backend doesn't send it
+}
 
 interface PaystandPaymentState {
     isTokenizing: boolean;
     tokenData: PaystandTokenData | null;
     feeInfo: PaystandFeeInfo | null;
     error: string | null;
+    config: PaystandConfig | null;
+}
+
+/**
+ * Fetch Paystand configuration from backend
+ */
+async function fetchPaystandConfig(storeHash: string): Promise<PaystandConfig> {
+    const response = await fetch(PAYSTAND_CONFIG_ENDPOINT, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ store_hash: storeHash }),
+    });
+
+    if (!response.ok) {
+        throw new Error(`Failed to fetch Paystand config: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    
+    if (!result.success || !result.data) {
+        throw new Error('Invalid response from Paystand config endpoint');
+    }
+
+    // Map snake_case from API to camelCase for TypeScript
+    const apiData = result.data;
+    return {
+        publishableKey: apiData.publishable_key || apiData.publishableKey,
+        presetCustom: apiData.preset_custom || apiData.presetCustom,
+        customerId: apiData.customer_id || apiData.customerId,
+        updateOrderOn: apiData.update_order_on || apiData.updateOrderOn,
+        useSandbox: apiData.use_sandbox ?? apiData.useSandbox,
+    };
 }
 
 const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
@@ -46,21 +81,59 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
         tokenData: null,
         feeInfo: null,
         error: null,
+        config: null,
     });
 
+    // Fetch Paystand configuration on mount
+    useEffect(() => {
+        const loadConfig = async () => {
+            try {
+                const config = checkoutState.data.getConfig();
+                const storeHash = config?.storeProfile?.storeHash;
+                
+                if (!storeHash) {
+                    throw new Error('Store hash not available');
+                }
+
+                console.log('🔄 Fetching Paystand configuration for store:', storeHash);
+                const paystandConfig = await fetchPaystandConfig(storeHash);
+                
+                console.log('✅ Paystand configuration loaded:', paystandConfig);
+                setState(prev => ({ ...prev, config: paystandConfig }));
+                console.log(state);
+            } catch (error) {
+                console.error('❌ Failed to load Paystand configuration:', error);
+                setState(prev => ({
+                    ...prev,
+                    error: error instanceof Error ? error.message : 'Failed to load payment configuration',
+                }));
+            }
+        };
+
+        loadConfig();
+    }, [checkoutState]);
+
     const apiService = useMemo(
-        () => new PaystandApiService(PAYSTAND_CONFIG.publishableKey, PAYSTAND_CONFIG.environment),
-        [],
+        () => {
+            if (!state.config) return null;
+            // 'sandbox' for .co, 'biz' for production
+            const environment = state.config.useSandbox === 0 ? 'biz' : 'sandbox';
+            return new PaystandApiService(state.config.publishableKey, environment);
+        },
+        [state.config],
     );
 
     const feeCalculator = useMemo(
-        () =>
-            new PaystandFeeCalculator(
+        () => {
+            if (!apiService || !state.config) return null;
+            // Note: Using customerId as feeSettingPlanId - adjust if needed
+            return new PaystandFeeCalculator(
                 apiService,
-                PAYSTAND_CONFIG.feeSettingPlanId,
-                PAYSTAND_CONFIG.dynamicDiscountingPlanId,
-            ),
-        [apiService],
+                state.config.customerId,
+                undefined, // No dynamicDiscountingPlanId in the response
+            );
+        },
+        [apiService, state.config],
     );
 
     const orderService = useMemo(
@@ -110,6 +183,10 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                     },
                 };
 
+                if (!apiService) {
+                    throw new Error('Payment service not initialized');
+                }
+                
                 const paymentResult = await apiService.processPayment(paymentData);
 
                 // Submit the order through BigCommerce with payment data
@@ -153,6 +230,11 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
     const handleTokenizePayment = useCallback(async () => {
         try {
             setState((prev) => ({ ...prev, isTokenizing: true, error: null }));
+            
+            if (!state.config) {
+                throw new Error('Paystand configuration not loaded');
+            }
+            
             console.log('checkoutState', checkoutState);
             const checkoutInfo = checkoutState.data.getCheckout();
             const cartInfo = checkoutState.data.getCart();
@@ -172,117 +254,40 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
             }
 
             const email = cartInfo?.email || '';
+            const config = checkoutState.data.getConfig();
+            const storeHash = config?.storeProfile?.storeHash || '';
+            
+            console.log('═══════════════════════════════════════════════════');
+            console.log('🏪 STORE HASH:', storeHash);
+            console.log('🔧 PAYSTAND CONFIG:', state.config);
+            console.log('═══════════════════════════════════════════════════');
+            
+            // Environment mapping:
+            // 'sandbox' -> uses .co domain
+            // 'development' -> uses .biz domain  
+            // 'production' -> uses .biz/com domain
+            // Default to 'sandbox' if useSandbox is undefined or 1
+            const environment = state.config.useSandbox === 0 ? 'production' : 'sandbox';
+            
+            console.log('🌍 Environment:', environment);
+            console.log('🔧 useSandbox from config:', state.config.useSandbox);
+            console.log('⚠️ Using "sandbox" for .co domain');
+            
             const attributes: Record<string, string> = {
                 id: PAYSTAND_SCRIPT_ID,
                 type: 'text/javascript',
                 // Core attributes matching the template
                 'ps-mode': 'modal',
                 'ps-show': 'true',
-                'ps-preset-name': 'tokenize',
-                'ps-publishable-key': PAYSTAND_CONFIG.publishableKey,
-                'ps-env': PAYSTAND_CONFIG.environment,
+                'ps-preset-name': state.config.presetCustom,
+                'ps-publishable-key': state.config.publishableKey,
+                'ps-env': environment,
                 // Payer information from checkout
                 'ps-payerEmail': email,
+                'ps-amount': checkoutInfo?.grandTotal.toString() || '0',
             };
-
-            // ⚠️ COMMENTED OUT - Original logic for processing token and fees
-            /*
-            const customEvent = event as CustomEvent<{ token: any }>;
-
-            if (customEvent.detail && customEvent.detail.token) {
-                const tokenResponse = customEvent.detail.token;
-                const paymentMethodType = feeCalculator.determinePaymentMethodType(tokenResponse);
-
-                // 🎯 LOG COMPLETE TOKEN RESPONSE FROM /v3/Tokens
-                console.log('═══════════════════════════════════════════════════');
-                console.log('🎯 PAYSTAND TOKEN RESPONSE FROM /v3/Tokens');
-                console.log('═══════════════════════════════════════════════════');
-                console.log(JSON.stringify(tokenResponse, null, 2));
-                console.log('═══════════════════════════════════════════════════');
-
-                // 📊 LOG CAPTURED DATA FROM MODAL
-                const capturedData = {
-                    tokenId: tokenResponse.id,
-                    type: paymentMethodType,
-                    ...(tokenResponse.card && {
-                        card: {
-                            name: tokenResponse.card.nameOnCard,
-                            brand: tokenResponse.card.brand,
-                            last4: tokenResponse.card.last4,
-                            expiry: `${tokenResponse.card.expirationMonth}/${tokenResponse.card.expirationYear}`,
-                            billingAddress: tokenResponse.card.billingAddress,
-                        },
-                    }),
-                    ...(tokenResponse.bank && {
-                        bank: {
-                            name: tokenResponse.bank.nameOnAccount,
-                            accountType: tokenResponse.bank.accountType,
-                            accountHolderType: tokenResponse.bank.accountHolderType,
-                            bankName: tokenResponse.bank.bankName,
-                            routingNumber: tokenResponse.bank.routingNumber,
-                            last4: tokenResponse.bank.last4,
-                            verified: tokenResponse.bank.verified,
-                            billingAddress: tokenResponse.bank.billingAddress,
-                        },
-                    }),
-                    timestamp: new Date().toISOString(),
-                };
-
-                // eslint-disable-next-line no-console
-                console.log('🎯 PAYSTAND MODAL DATA CAPTURED:', capturedData);
-
-                const tokenData: PaystandTokenData = {
-                    tokenId: tokenResponse.id as string,
-                    paymentMethodType,
-                    card: tokenResponse.card,
-                    bank: tokenResponse.bank,
-                };
-
-                // Store token data in payment form
-                paymentForm.setFieldValue('paystandTokenId', tokenResponse.id);
-                paymentForm.setFieldValue('paystandPaymentMethodType', paymentMethodType);
-
-                // Calculate fees for the selected payment method
-                feeCalculator
-                    .calculateFeesForPaymentMethod(paymentMethodType, checkoutInfo.subtotal)
-                    .then(async (feeInfo) => {
-                        try {
-                            // Apply fees to the order
-                            await orderService.applyFeesToOrder(feeInfo);
-
-                            setState((prev) => ({
-                                ...prev,
-                                tokenData,
-                                feeInfo,
-                                isTokenizing: false,
-                            }));
-
-                            // eslint-disable-next-line no-console
-                            console.log('Calculated and applied fees:', feeInfo);
-                        } catch (feeApplicationError) {
-                            // If fee application fails, still store the fee info for display
-                            setState((prev) => ({
-                                ...prev,
-                                tokenData,
-                                feeInfo,
-                                isTokenizing: false,
-                            }));
-
-                            console.warn('Failed to apply fees to order, but continuing with tokenization:', feeApplicationError);
-                            // eslint-disable-next-line no-console
-                            console.log('Calculated fees (not applied to order):', feeInfo);
-                        }
-                    })
-                    .catch((error) => {
-                        setState((prev) => ({
-                            ...prev,
-                            error: 'Failed to calculate fees',
-                            isTokenizing: false,
-                        }));
-                        onUnhandledError(error as Error);
-                    });
-            }
-            */
+            
+            console.log('📝 Script attributes:', attributes);
 
             // Set up PayStandCheckout completion handler
             const setupPayStandHandlers = () => {
@@ -360,15 +365,9 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                             console.log('Timestamp:', new Date().toISOString());
                             console.log('═══════════════════════════════════════════════════');
                             
-                            
-                            console.log('═══════════════════════════════════════════════════');
-                            console.log("Alex console.log");
-                            console.log(data);
-                            console.log('═══════════════════════════════════════════════════');
-
-                            /*
-                            if (!data || !data.token || !data.token.id) {
-                                console.error('❌ No token found in onComplete data');
+                            // ✅ 1. VERIFICAR QUE EXISTA EL TOKEN EN data.response.data
+                            if (!data || !data.response || !data.response.data || !data.response.data.id) {
+                                console.error('❌ No token found in onComplete data.response.data');
                                 setState((prev) => ({
                                     ...prev,
                                     error: 'No se recibió token de pago',
@@ -377,25 +376,13 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                                 return;
                             }
                             
-                            const tokenResponse = data.token;
-                            
-                            console.log(tokenResponse);
-                            
-                            */
-                            // Get checkout state to retrieve grandTotal and currencyCode
-                            const state = checkoutService.getState();
-                            const grandTotal = state.data.getCheckout()?.grandTotal;
-                            const currencyCode = 
-                                state.data.getCart()?.currency?.code 
-                                ?? state.data.getConfig()?.currency?.code;
+                            const tokenResponse = data.response.data;
                             
                             console.log('═══════════════════════════════════════════════════');
-                            console.log('💰 CHECKOUT TOTALS');
+                            console.log('TokenResponse:', JSON.stringify(tokenResponse, null, 2));
                             console.log('═══════════════════════════════════════════════════');
-                            console.log('Grand Total:', grandTotal);
-                            console.log('Currency Code:', currencyCode);
-                            console.log('═══════════════════════════════════════════════════');
-                            
+
+                            // OCULTAR EL MODAL DE PAYSTAND
                             if (PayStandCheckout.hideCheckout) {
                                 PayStandCheckout.hideCheckout();
                             }
@@ -495,7 +482,7 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                 onUnhandledError(error);
             }
         }
-    }, [onUnhandledError, checkoutState, paymentForm, feeCalculator, orderService]);
+    }, [onUnhandledError, checkoutState, paymentForm, feeCalculator, orderService, state.config, apiService]);
 
     useEffect(() => {
         return () => {
@@ -506,8 +493,16 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
         };
     }, []);
 
-    // const checkoutData = checkoutState.data.getCheckout();
-    // const subtotal = checkoutData?.subtotal || 0;
+    // Show loading state while configuration is being fetched
+    if (!state.config && !state.error) {
+        return (
+            <div data-test="paystand-payment-method">
+                <div className="alert alert--info">
+                    Loading payment configuration...
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div data-test="paystand-payment-method">
@@ -523,7 +518,7 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                     <button
                         className="button button--primary"
                         data-test="paystand-tokenize-button"
-                        disabled={state.isTokenizing}
+                        disabled={state.isTokenizing || !state.config}
                         onClick={handleTokenizePayment}
                         type="button"
                     >
