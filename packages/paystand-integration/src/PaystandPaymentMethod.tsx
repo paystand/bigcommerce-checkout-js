@@ -1,3 +1,4 @@
+/* eslint-disable */
 import { getScriptLoader } from '@bigcommerce/script-loader';
 import React, { type FunctionComponent, useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -184,129 +185,297 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                 'ps-payerEmail': email,
             };
 
-            // Set up event listener for tokenization completion
-            const handleTokenization = (event: Event) => {
-                console.log('handleTokenization', event);
-                const customEvent = event as CustomEvent<{ token: any }>;
+            // ⚠️ COMMENTED OUT - Original logic for processing token and fees
+            /*
+            const customEvent = event as CustomEvent<{ token: any }>;
 
-                if (customEvent.detail && customEvent.detail.token) {
-                    const tokenResponse = customEvent.detail.token;
-                    const paymentMethodType = feeCalculator.determinePaymentMethodType(tokenResponse);
+            if (customEvent.detail && customEvent.detail.token) {
+                const tokenResponse = customEvent.detail.token;
+                const paymentMethodType = feeCalculator.determinePaymentMethodType(tokenResponse);
 
-                    // 📊 LOG CAPTURED DATA FROM MODAL
-                    const capturedData = {
-                        tokenId: tokenResponse.id,
-                        type: paymentMethodType,
-                        ...(tokenResponse.card && {
-                            card: {
-                                name: tokenResponse.card.nameOnCard,
-                                brand: tokenResponse.card.brand,
-                                last4: tokenResponse.card.last4,
-                                expiry: `${tokenResponse.card.expirationMonth}/${tokenResponse.card.expirationYear}`,
-                                billingAddress: tokenResponse.card.billingAddress,
-                            },
-                        }),
-                        ...(tokenResponse.bank && {
-                            bank: {
-                                name: tokenResponse.bank.nameOnAccount,
-                                accountType: tokenResponse.bank.accountType,
-                                accountHolderType: tokenResponse.bank.accountHolderType,
-                                bankName: tokenResponse.bank.bankName,
-                                routingNumber: tokenResponse.bank.routingNumber,
-                                last4: tokenResponse.bank.last4,
-                                verified: tokenResponse.bank.verified,
-                                billingAddress: tokenResponse.bank.billingAddress,
-                            },
-                        }),
-                        timestamp: new Date().toISOString(),
-                    };
+                // 🎯 LOG COMPLETE TOKEN RESPONSE FROM /v3/Tokens
+                console.log('═══════════════════════════════════════════════════');
+                console.log('🎯 PAYSTAND TOKEN RESPONSE FROM /v3/Tokens');
+                console.log('═══════════════════════════════════════════════════');
+                console.log(JSON.stringify(tokenResponse, null, 2));
+                console.log('═══════════════════════════════════════════════════');
 
-                    // eslint-disable-next-line no-console
-                    console.log('🎯 PAYSTAND MODAL DATA CAPTURED:', capturedData);
+                // 📊 LOG CAPTURED DATA FROM MODAL
+                const capturedData = {
+                    tokenId: tokenResponse.id,
+                    type: paymentMethodType,
+                    ...(tokenResponse.card && {
+                        card: {
+                            name: tokenResponse.card.nameOnCard,
+                            brand: tokenResponse.card.brand,
+                            last4: tokenResponse.card.last4,
+                            expiry: `${tokenResponse.card.expirationMonth}/${tokenResponse.card.expirationYear}`,
+                            billingAddress: tokenResponse.card.billingAddress,
+                        },
+                    }),
+                    ...(tokenResponse.bank && {
+                        bank: {
+                            name: tokenResponse.bank.nameOnAccount,
+                            accountType: tokenResponse.bank.accountType,
+                            accountHolderType: tokenResponse.bank.accountHolderType,
+                            bankName: tokenResponse.bank.bankName,
+                            routingNumber: tokenResponse.bank.routingNumber,
+                            last4: tokenResponse.bank.last4,
+                            verified: tokenResponse.bank.verified,
+                            billingAddress: tokenResponse.bank.billingAddress,
+                        },
+                    }),
+                    timestamp: new Date().toISOString(),
+                };
 
-                    const tokenData: PaystandTokenData = {
-                        tokenId: tokenResponse.id as string,
-                        paymentMethodType,
-                        card: tokenResponse.card,
-                        bank: tokenResponse.bank,
-                    };
+                // eslint-disable-next-line no-console
+                console.log('🎯 PAYSTAND MODAL DATA CAPTURED:', capturedData);
 
-                    // Store token data in payment form
-                    paymentForm.setFieldValue('paystandTokenId', tokenResponse.id);
-                    paymentForm.setFieldValue('paystandPaymentMethodType', paymentMethodType);
+                const tokenData: PaystandTokenData = {
+                    tokenId: tokenResponse.id as string,
+                    paymentMethodType,
+                    card: tokenResponse.card,
+                    bank: tokenResponse.bank,
+                };
 
-                    // Calculate fees for the selected payment method
-                    feeCalculator
-                        .calculateFeesForPaymentMethod(paymentMethodType, checkoutInfo.subtotal)
-                        .then(async (feeInfo) => {
-                            try {
-                                // Apply fees to the order
-                                await orderService.applyFeesToOrder(feeInfo);
+                // Store token data in payment form
+                paymentForm.setFieldValue('paystandTokenId', tokenResponse.id);
+                paymentForm.setFieldValue('paystandPaymentMethodType', paymentMethodType);
 
-                                setState((prev) => ({
-                                    ...prev,
-                                    tokenData,
-                                    feeInfo,
-                                    isTokenizing: false,
-                                }));
+                // Calculate fees for the selected payment method
+                feeCalculator
+                    .calculateFeesForPaymentMethod(paymentMethodType, checkoutInfo.subtotal)
+                    .then(async (feeInfo) => {
+                        try {
+                            // Apply fees to the order
+                            await orderService.applyFeesToOrder(feeInfo);
 
-                                // eslint-disable-next-line no-console
-                                console.log('Calculated and applied fees:', feeInfo);
-                            } catch (feeApplicationError) {
-                                // If fee application fails, still store the fee info for display
-                                setState((prev) => ({
-                                    ...prev,
-                                    tokenData,
-                                    feeInfo,
-                                    isTokenizing: false,
-                                }));
-
-                                console.warn('Failed to apply fees to order, but continuing with tokenization:', feeApplicationError);
-                                // eslint-disable-next-line no-console
-                                console.log('Calculated fees (not applied to order):', feeInfo);
-                            }
-                        })
-                        .catch((error) => {
                             setState((prev) => ({
                                 ...prev,
-                                error: 'Failed to calculate fees',
+                                tokenData,
+                                feeInfo,
                                 isTokenizing: false,
                             }));
-                            onUnhandledError(error as Error);
-                        });
-                }
-            };
+
+                            // eslint-disable-next-line no-console
+                            console.log('Calculated and applied fees:', feeInfo);
+                        } catch (feeApplicationError) {
+                            // If fee application fails, still store the fee info for display
+                            setState((prev) => ({
+                                ...prev,
+                                tokenData,
+                                feeInfo,
+                                isTokenizing: false,
+                            }));
+
+                            console.warn('Failed to apply fees to order, but continuing with tokenization:', feeApplicationError);
+                            // eslint-disable-next-line no-console
+                            console.log('Calculated fees (not applied to order):', feeInfo);
+                        }
+                    })
+                    .catch((error) => {
+                        setState((prev) => ({
+                            ...prev,
+                            error: 'Failed to calculate fees',
+                            isTokenizing: false,
+                        }));
+                        onUnhandledError(error as Error);
+                    });
+            }
+            */
 
             // Set up PayStandCheckout completion handler
             const setupPayStandHandlers = () => {
+                console.log('🎯 Setting up PayStandCheckout handlers');
+                
+                // Listen for ALL postMessage events from the iframe
+                const messageHandler = (event: MessageEvent) => {
+                    // Only process messages from paystand domains
+                    if (event.origin.includes('paystand')) {
+                        console.log('═══════════════════════════════════════════════════');
+                        console.log('📨 MESSAGE FROM PAYSTAND IFRAME');
+                        console.log('═══════════════════════════════════════════════════');
+                        console.log('Origin:', event.origin);
+                        console.log('Data:', event.data);
+                        console.log('Timestamp:', new Date().toISOString());
+                        console.log('═══════════════════════════════════════════════════');
+                        
+                        // Check if this is a token message
+                        if (event.data && typeof event.data === 'object') {
+                            if (event.data.token || event.data.type === 'token' || event.data.action === 'tokenize') {
+                                console.log('🎯🎯🎯 TOKEN DATA FOUND IN MESSAGE:', JSON.stringify(event.data, null, 2));
+                            }
+                            
+                            // Check for modal close events
+                            if (event.data.type === 'checkoutEvent' && event.data.response?.event?.type === 'closeModal') {
+                                console.log('═══════════════════════════════════════════════════');
+                                console.log('❌ MODAL CLOSED - closeModal event');
+                                console.log('═══════════════════════════════════════════════════');
+                                console.log('Usuario cerró el modal de Paystand');
+                                console.log('Timestamp:', new Date().toISOString());
+                                console.log('═══════════════════════════════════════════════════');
+                                
+                                // Reset tokenizing state
+                                setState((prev) => ({
+                                    ...prev,
+                                    isTokenizing: false,
+                                }));
+                            }
+                            
+                            // Also check for closeDialog event
+                            if (event.data.type === 'checkoutEvent' && event.data.response?.event?.type === 'closeDialog') {
+                                console.log('═══════════════════════════════════════════════════');
+                                console.log('❌ DIALOG CLOSED - closeDialog event');
+                                console.log('═══════════════════════════════════════════════════');
+                                console.log('Usuario cerró el diálogo de Paystand');
+                                console.log('Timestamp:', new Date().toISOString());
+                                console.log('═══════════════════════════════════════════════════');
+                                
+                                // Reset tokenizing state
+                                setState((prev) => ({
+                                    ...prev,
+                                    isTokenizing: false,
+                                }));
+                            }
+                        }
+                    }
+                };
+                
+                window.addEventListener('message', messageHandler);
+                console.log('✅ Added message listener for iframe communication');
+                
                 // Wait for PayStandCheckout to be available
                 const checkForPayStand = (attempts = 0) => {
                     const maxAttempts = 50; // 5 seconds with 100ms intervals
                     if ((window as any).PayStandCheckout) {
-                        console.log('PayStandCheckout', (window as any).PayStandCheckout);
+                        console.log('✅ PayStandCheckout available:', (window as any).PayStandCheckout);
                         const PayStandCheckout = (window as any).PayStandCheckout;
 
                         // Set up completion handler
-                        PayStandCheckout.onComplete(() => {
+                        PayStandCheckout.onComplete((data: any) => {
+                            console.log('═══════════════════════════════════════════════════');
+                            console.log('🎉 PayStandCheckout.onComplete TRIGGERED');
+                            console.log('═══════════════════════════════════════════════════');
+                            console.log('Data:', JSON.stringify(data, null, 2));
+                            console.log('Timestamp:', new Date().toISOString());
+                            console.log('═══════════════════════════════════════════════════');
+                            
+                            
+                            console.log('═══════════════════════════════════════════════════');
+                            console.log("Alex console.log");
+                            console.log(data);
+                            console.log('═══════════════════════════════════════════════════');
+
+                            /*
+                            if (!data || !data.token || !data.token.id) {
+                                console.error('❌ No token found in onComplete data');
+                                setState((prev) => ({
+                                    ...prev,
+                                    error: 'No se recibió token de pago',
+                                    isTokenizing: false,
+                                }));
+                                return;
+                            }
+                            
+                            const tokenResponse = data.token;
+                            
+                            console.log(tokenResponse);
+                            
+                            */
+                            // Get checkout state to retrieve grandTotal and currencyCode
+                            const state = checkoutService.getState();
+                            const grandTotal = state.data.getCheckout()?.grandTotal;
+                            const currencyCode = 
+                                state.data.getCart()?.currency?.code 
+                                ?? state.data.getConfig()?.currency?.code;
+                            
+                            console.log('═══════════════════════════════════════════════════');
+                            console.log('💰 CHECKOUT TOTALS');
+                            console.log('═══════════════════════════════════════════════════');
+                            console.log('Grand Total:', grandTotal);
+                            console.log('Currency Code:', currencyCode);
+                            console.log('═══════════════════════════════════════════════════');
+                            
                             if (PayStandCheckout.hideCheckout) {
                                 PayStandCheckout.hideCheckout();
                             }
                         });
-
-                        // Set up checkout loaded configuration
-                        PayStandCheckout.once('event', 'checkoutLoaded', () => {
-                            PayStandCheckout.update({settings: { options: { address: { token: { edit: { buttons: { second: { preText: 'Save' } } } } } } } });
+                        
+                        // Set up cancel handler
+                        if (PayStandCheckout.onCancel) {
+                            PayStandCheckout.onCancel(() => {
+                                console.log('═══════════════════════════════════════════════════');
+                                console.log('❌ PayStandCheckout.onCancel TRIGGERED');
+                                console.log('═══════════════════════════════════════════════════');
+                                console.log('Usuario canceló el modal de Paystand');
+                                console.log('Timestamp:', new Date().toISOString());
+                                console.log('═══════════════════════════════════════════════════');
+                                
+                                // Reset tokenizing state
+                                setState((prev) => ({
+                                    ...prev,
+                                    isTokenizing: false,
+                                }));
+                            });
+                            console.log('✅ Registered onCancel handler');
+                        } else {
+                            console.log('⚠️ PayStandCheckout.onCancel not available');
+                        }
+                        
+                        // Set up error handler
+                        if (PayStandCheckout.onError) {
+                            PayStandCheckout.onError((error: any) => {
+                                console.log('═══════════════════════════════════════════════════');
+                                console.log('⚠️ PayStandCheckout.onError TRIGGERED');
+                                console.log('═══════════════════════════════════════════════════');
+                                console.log('Error:', JSON.stringify(error, null, 2));
+                                console.log('Timestamp:', new Date().toISOString());
+                                console.log('═══════════════════════════════════════════════════');
+                                
+                                // Update state with error
+                                setState((prev) => ({
+                                    ...prev,
+                                    error: error?.message || 'Error al procesar el pago',
+                                    isTokenizing: false,
+                                }));
+                            });
+                            console.log('✅ Registered onError handler');
+                        } else {
+                            console.log('⚠️ PayStandCheckout.onError not available');
+                        }
+                        
+                        // Try to listen for all possible events
+                        const eventTypes = ['complete', 'tokenize', 'token', 'save', 'submit', 'success', 'ready', 'checkoutLoaded'];
+                        eventTypes.forEach(eventType => {
+                            try {
+                                if (PayStandCheckout.on) {
+                                    PayStandCheckout.on('event', eventType, (data: any) => {
+                                        console.log('═══════════════════════════════════════════════════');
+                                        console.log(`🔔 PayStand Event: ${eventType}`);
+                                        console.log('═══════════════════════════════════════════════════');
+                                        console.log('Data:', JSON.stringify(data, null, 2));
+                                        console.log('═══════════════════════════════════════════════════');
+                                    });
+                                    console.log(`✅ Registered listener for event: ${eventType}`);
+                                }
+                            } catch (e) {
+                                console.log(`⚠️ Could not register event: ${eventType}`);
+                            }
                         });
                     } else if (attempts < maxAttempts) {
                         setTimeout(() => checkForPayStand(attempts + 1), 100);
+                    } else {
+                        console.log('❌ PayStandCheckout not available after max attempts');
                     }
                 };
-                
                 checkForPayStand();
             };
 
-            // Add event listener for tokenization
-            window.addEventListener('paystand-tokenization-complete', handleTokenization);
+            // 🚀 LOG: About to load Paystand modal script
+            console.log('🚀 LOADING PAYSTAND MODAL SCRIPT');
+            console.log('Script URL:', PAYSTAND_SCRIPT_SRC);
+            console.log('Script attributes:', attributes);
+            console.log('Timestamp:', new Date().toISOString());
 
             await scriptLoader.loadScript(PAYSTAND_SCRIPT_SRC, {
                 async: false,
@@ -315,11 +484,6 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
             
             // Set up PayStand completion handlers after script loads
             setupPayStandHandlers();
-
-            // Clean up event listener after script loads
-            return () => {
-                window.removeEventListener('paystand-tokenization-complete', handleTokenization);
-            };
 
         } catch (error) {
             setState((prev) => ({

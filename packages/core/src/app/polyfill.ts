@@ -1,1 +1,1 @@
-import './generated/polyfill';
+import './generated/polyfill/index';
