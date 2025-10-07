@@ -158,6 +158,7 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                 'ps-publishable-key': state.config.publishableKey,
                 'ps-env': environment,
                 'ps-payerEmail': email,
+                'ps-fixedAmount': 'true',
                 'ps-amount': checkoutInfo?.grandTotal.toString() || '0',
             };
 
@@ -166,6 +167,17 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                     const maxAttempts = 50;
                     if ((window as any).PayStandCheckout) {
                         const PayStandCheckout = (window as any).PayStandCheckout;
+                        PayStandCheckout.onceLoaded(function () {
+                            PayStandCheckout.update({
+                                settings: {
+                                    options: {
+                                        payer: {
+                                            edit: { email: { show: false } }
+                                        },
+                                    },
+                                },
+                            });
+                        })
 
                         // Auto-submit after payment completion
                         PayStandCheckout.onComplete(async (paymentData: any) => {
