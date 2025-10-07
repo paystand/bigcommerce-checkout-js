@@ -111,7 +111,7 @@ function appConfig(options, argv) {
             output: {
                 path: isProduction ? join(__dirname, 'dist') : join(__dirname, 'build'),
                 filename: `${outputFilename}.js`,
-                chunkFilename: `${outputFilename}.js?v=${new Date().toISOString().split('T')[0]}`,
+                chunkFilename: `${outputFilename}.js?v=${new Date().toISOString()}`,
                 chunkLoadingGlobal: 'webpackJsonpCheckout',
                 library: LIBRARY_NAME,
                 crossOriginLoading: 'anonymous',
