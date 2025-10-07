@@ -633,19 +633,6 @@ export function mapToPaymentProps({
         });
     }
 
-    // TEMP: Ensure Paystand appears in the list until backend settings endpoint is wired
-    if (!filteredMethods.some((method: PaymentMethod) => method.id === 'paystand')) {
-        const syntheticPaystand = {
-            id: 'paystand',
-            method: 'paystand',
-            config: { displayName: 'Paystand' },
-            supportedCards: [],
-            initializationData: {},
-        } as unknown as PaymentMethod;
-
-        filteredMethods = [...filteredMethods, syntheticPaystand];
-    }
-
     if (selectedPayment) {
         selectedPaymentMethod = getPaymentMethod(
             selectedPayment.providerId,
