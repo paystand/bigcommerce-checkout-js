@@ -110,8 +110,8 @@ export class PaystandApiService {
         this.baseUrl = environment === 'biz' 
             ? 'https://api.paystand.biz' 
             : environment === 'development' 
-                ? 'https://api.paystand.co' 
-                : 'https://api.paystand.co';
+                ? 'https://api.paystand.io' 
+                : 'https://api.paystand.io';
     }
 
     /**
