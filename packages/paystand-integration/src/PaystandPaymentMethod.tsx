@@ -56,6 +56,38 @@ async function fetchPaystandConfig(storeHash: string): Promise<PaystandConfig> {
     };
 }
 
+/**
+ * Add adjustment (fees/discounts) to checkout
+ */
+async function addAdjustment(
+    checkoutId: string,
+    storeHash: string,
+    payerTotalFees: number,
+    payerDiscount: number,
+    payerId: string
+): Promise<void> {
+    const response = await fetch('https://de5a53673321.ngrok-free.app/api/webhook/add-adjustment', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            checkoutId,
+            store_hash: storeHash,
+            payerTotalFees,
+            payerDiscount,
+            payerId,
+        }),
+    });
+
+    if (!response.ok) {
+        throw new Error(`Failed to add adjustment: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    console.log('✅ Adjustment added successfully:', result);
+}
+
 const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
     onUnhandledError,
     checkoutService,
@@ -159,13 +191,36 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                                 return;
                             }
                             
-                            //set fees-discounts
-                            
-
                             // Hide modal
                             if (PayStandCheckout.hideCheckout) {
                                 PayStandCheckout.hideCheckout();
                             }
+                            
+                            // Set fees-discounts
+                            try {
+                                const config = checkoutState.data.getConfig();
+                                const storeHash = config?.storeProfile?.storeHash;
+                                
+                                if (storeHash) {
+                                    console.log('💰 Adding adjustment (fees/discounts)...');
+                                    await addAdjustment(
+                                        checkoutInfo.id,
+                                        storeHash,
+                                        payerTotalFees || 0,
+                                        payerDiscount || 0,
+                                        payerId
+                                    );
+                                    
+                                    // Reload checkout after adding fees/discounts
+                                    console.log('🔄 Reloading checkout after adjustment...');
+                                    await checkoutService.loadCheckout(checkoutInfo.id);
+                                    console.log('✅ Checkout reloaded successfully');
+                                }
+                            } catch (adjustmentError) {
+                                console.error('⚠️ Warning: Failed to add adjustment:', adjustmentError);
+                                // Continue with order submission even if adjustment fails
+                            }
+
 
                             // Auto-submit order
                             try {
@@ -177,11 +232,51 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
 
                                 const orderState = checkoutService.getState();
                                 const order = orderState.data.getOrder();
-                                console.log(`Order que se acaba de crear ${order}`);
+                                
+                                console.log('✅ Order created successfully!');
+                                console.log('📦 Order ID:', order?.orderId);
+                                console.log(`${payerId} ese de antes es el payer id`);
 
+                                // Update order with Paystand payment info
                                 if (order && order.orderId) {
+                                    try {
+                                        const config = checkoutState.data.getConfig();
+                                        const storeHash = config?.storeProfile?.storeHash;
+                                        
+                                        if (storeHash) {
+                                            console.log('📝 Updating order with Paystand payment info...');
+                                            
+                                            const response = await fetch('https://de5a53673321.ngrok-free.app/api/webhook/update-order', {
+                                                method: 'POST',
+                                                headers: {
+                                                    'Content-Type': 'application/json',
+                                                },
+                                                body: JSON.stringify({
+                                                    store_hash: storeHash,
+                                                    payer_id: payerId,
+                                                    order: order,
+                                                }),
+                                            });
+
+                                            if (response.ok) {
+                                                const result = await response.json();
+                                                console.log('✅ Order updated successfully:', result);
+                                            } else {
+                                                console.error('⚠️ Failed to update order:', response.statusText);
+                                            }
+                                        }
+                                    } catch (updateError) {
+                                        console.error('⚠️ Error updating order:', updateError);
+                                        // Continue to redirect even if update fails
+                                    }
+
+                                    // Redirect to order confirmation
                                     window.location.href = `/checkout/order-confirmation/${order.orderId}`;
                                 }
+
+                                
+
+
                             } catch (error) {
                                 console.error('❌ Error submitting order:', error);
                                 setState((prev) => ({
