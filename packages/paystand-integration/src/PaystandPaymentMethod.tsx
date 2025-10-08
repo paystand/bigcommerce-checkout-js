@@ -83,9 +83,6 @@ async function addAdjustment(
     if (!response.ok) {
         throw new Error(`Failed to add adjustment: ${response.statusText}`);
     }
-
-    const result = await response.json();
-    console.log('✅ Adjustment added successfully:', result);
 }
 
 const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
@@ -111,7 +108,6 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                 }
 
                 const paystandConfig = await fetchPaystandConfig(storeHash);
-                console.log('Succesfully load paystand configuration!');
                 setState(prev => ({ ...prev, config: paystandConfig }));
             } catch (error) {
                 console.error('❌ Failed to load Paystand configuration:', error);
@@ -134,12 +130,21 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
             }
             
             const checkoutInfo = checkoutState.data.getCheckout();
-            const cartInfo = checkoutState.data.getCart();
             
             if (!checkoutInfo) {
                 throw new Error('Checkout data not available');
             }
 
+            // If PayStandCheckout already exists, just show it
+            if ((window as any).PayStandCheckout) {
+                const PayStandCheckout = (window as any).PayStandCheckout;
+                if (PayStandCheckout.showCheckout) {
+                    PayStandCheckout.showCheckout();
+                    return;
+                }
+            }
+
+            // Otherwise, load the script for the first time
             const scriptLoader = getScriptLoader();
             const existing = document.getElementById(PAYSTAND_SCRIPT_ID);
 
@@ -147,6 +152,7 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                 existing.parentElement?.removeChild(existing);
             }
 
+            const cartInfo = checkoutState.data.getCart();
             const email = cartInfo?.email || '';
             const environment = state.config.useSandbox === 0 ? 'production' : 'staging';
             
@@ -160,13 +166,40 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                 'ps-payerEmail': email,
                 'ps-fixedAmount': 'true',
                 'ps-amount': checkoutInfo?.grandTotal.toString() || '0',
+                'ps-customerId': checkoutInfo.customer.id.toString(),
+                'ps-checkoutId': checkoutInfo.id,
             };
 
             const setupPayStandHandlers = () => {
+                // Listen for postMessage events from Paystand iframe
+                const messageHandler = (event: MessageEvent) => {
+                    // Only process messages from paystand domains
+                    if (event.origin.includes('paystand') && event.data && typeof event.data === 'object') {
+                        // Check for modal close events
+                        if (event.data.type === 'checkoutEvent' && event.data.response?.event?.type === 'closeModal') {
+                            setState((prev) => ({
+                                ...prev,
+                                isTokenizing: false,
+                            }));
+                        }
+                        
+                        // Also check for closeDialog event
+                        if (event.data.type === 'checkoutEvent' && event.data.response?.event?.type === 'closeDialog') {
+                            setState((prev) => ({
+                                ...prev,
+                                isTokenizing: false,
+                            }));
+                        }
+                    }
+                };
+                
+                window.addEventListener('message', messageHandler);
+
                 const checkForPayStand = (attempts = 0) => {
                     const maxAttempts = 50;
                     if ((window as any).PayStandCheckout) {
                         const PayStandCheckout = (window as any).PayStandCheckout;
+                        
                         PayStandCheckout.onceLoaded(function () {
                             PayStandCheckout.update({
                                 settings: {
@@ -181,20 +214,11 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
 
                         // Auto-submit after payment completion
                         PayStandCheckout.onComplete(async (paymentData: any) => {
-                            console.log('🎉 Payment completed in Paystand modal');
-
-                            console.log('This should be the payment data')
-                            console.log(JSON.stringify(paymentData.response.data, null, 2));
-
                             const payerId = paymentData.response.data.payerId;
                             const payerDiscount = paymentData.response.data.feeSplit.payerDiscount;
                             const payerTotalFees = paymentData.response.data.feeSplit.payerTotalFees;
-
-                            console.log(`Este es el payerId ${payerId}`);
-                            console.log(`Payer Discount: ${payerDiscount}, Payer Total Fees: ${payerTotalFees}`);
                             
                             if (!paymentData || !paymentData.response || !paymentData.response.data || !paymentData.response.data.id) {
-                                console.error('❌ No token found in response');
                                 setState((prev) => ({
                                     ...prev,
                                     error: 'No se recibió token de pago',
@@ -214,7 +238,6 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                                 const storeHash = config?.storeProfile?.storeHash;
                                 
                                 if (storeHash) {
-                                    console.log('💰 Adding adjustment (fees/discounts)...');
                                     await addAdjustment(
                                         checkoutInfo.id,
                                         storeHash,
@@ -223,31 +246,20 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                                         payerId
                                     );
                                     
-                                    // Reload checkout after adding fees/discounts
-                                    console.log('🔄 Reloading checkout after adjustment...');
                                     await checkoutService.loadCheckout(checkoutInfo.id);
-                                    console.log('✅ Checkout reloaded successfully');
                                 }
                             } catch (adjustmentError) {
                                 console.error('⚠️ Warning: Failed to add adjustment:', adjustmentError);
-                                // Continue with order submission even if adjustment fails
                             }
-
 
                             // Auto-submit order
                             try {
-                                console.log('🚀 Auto-submitting order...');
-                                
                                 await checkoutService.submitOrder({
                                     payment: { methodId: 'moneyorder' },
                                 });
 
                                 const orderState = checkoutService.getState();
                                 const order = orderState.data.getOrder();
-                                
-                                console.log('✅ Order created successfully!');
-                                console.log('📦 Order ID:', order?.orderId);
-                                console.log(`${payerId} ese de antes es el payer id`);
 
                                 // Update order with Paystand payment info
                                 if (order && order.orderId) {
@@ -256,8 +268,6 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                                         const storeHash = config?.storeProfile?.storeHash;
                                         
                                         if (storeHash) {
-                                            console.log('📝 Updating order with Paystand payment info...');
-                                            
                                             const response = await fetch('https://de5a53673321.ngrok-free.app/api/webhook/update-order', {
                                                 method: 'POST',
                                                 headers: {
@@ -270,10 +280,7 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                                                 }),
                                             });
 
-                                            if (response.ok) {
-                                                const result = await response.json();
-                                                console.log('✅ Order updated successfully:', result);
-                                            } else {
+                                            if (!response.ok) {
                                                 console.error('⚠️ Failed to update order:', response.statusText);
                                             }
                                         }
@@ -300,19 +307,10 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                             }
                         });
                         
-                        // Handle cancellation
-                        if (PayStandCheckout.onCancel) {
-                            PayStandCheckout.onCancel(() => {
-                                setState((prev) => ({
-                                    ...prev,
-                                    isTokenizing: false,
-                                }));
-                            });
-                        }
-                        
                         // Handle errors
                         if (PayStandCheckout.onError) {
                             PayStandCheckout.onError((error: any) => {
+                                console.error('❌ Payment error:', error);
                                 setState((prev) => ({
                                     ...prev,
                                     error: error?.message || 'Error al procesar el pago',
