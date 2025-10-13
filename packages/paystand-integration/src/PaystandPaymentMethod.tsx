@@ -89,12 +89,22 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
     onUnhandledError,
     checkoutService,
     checkoutState,
+    paymentForm,
+    method,
 }) => {
     const [state, setState] = useState<PaystandPaymentState>({
         isTokenizing: false,
         error: null,
         config: null,
     });
+
+    // Disable Place Order button when Paystand is selected
+    useEffect(() => {
+        paymentForm.disableSubmit(method, true);
+        return () => {
+            paymentForm.disableSubmit(method, false);
+        };
+    }, []);
 
     // Fetch Paystand configuration on mount
     useEffect(() => {
@@ -168,6 +178,9 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                 'ps-amount': checkoutInfo?.grandTotal.toString() || '0',
                 'ps-customerId': checkoutInfo.customer.id.toString(),
                 'ps-checkoutId': checkoutInfo.id,
+                'ps-paymentMeta': JSON.stringify({
+                    cartId: cartInfo?.id,
+                }),
             };
 
             const setupPayStandHandlers = () => {
@@ -207,6 +220,13 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                                         payer: {
                                             edit: { email: { show: false } }
                                         },
+                                        portal: {
+                                            logo: {
+                                              show: false,
+                                              remove: true
+                                            }
+                                        },
+                                        
                                     },
                                 },
                             });
@@ -221,7 +241,7 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                             if (!paymentData || !paymentData.response || !paymentData.response.data || !paymentData.response.data.id) {
                                 setState((prev) => ({
                                     ...prev,
-                                    error: 'No se recibió token de pago',
+                                    error: 'Payment token not received',
                                     isTokenizing: false,
                                 }));
                                 return;
@@ -261,14 +281,14 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                                 const orderState = checkoutService.getState();
                                 const order = orderState.data.getOrder();
 
-                                // Update order with Paystand payment info
+                                // Set Payer ID for the order
                                 if (order && order.orderId) {
                                     try {
                                         const config = checkoutState.data.getConfig();
                                         const storeHash = config?.storeProfile?.storeHash;
                                         
                                         if (storeHash) {
-                                            const response = await fetch('https://de5a53673321.ngrok-free.app/api/webhook/update-order', {
+                                            const response = await fetch('https://de5a53673321.ngrok-free.app/api/webhook/set-payer-id', {
                                                 method: 'POST',
                                                 headers: {
                                                     'Content-Type': 'application/json',
@@ -280,13 +300,15 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                                                 }),
                                             });
 
-                                            if (!response.ok) {
-                                                console.error('⚠️ Failed to update order:', response.statusText);
+                                            if (response.ok) {
+                                                console.log('✅ Payer ID set successfully:', payerId);
+                                            } else {
+                                                console.error('❌ Failed to set payer ID:', response.statusText);
                                             }
                                         }
-                                    } catch (updateError) {
-                                        console.error('⚠️ Error updating order:', updateError);
-                                        // Continue to redirect even if update fails
+                                    } catch (setPayerError) {
+                                        console.error('❌ Error setting payer ID:', setPayerError);
+                                        // Continue to redirect even if setting payer ID fails
                                     }
 
                                     // Redirect to order confirmation
@@ -300,10 +322,9 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                                 console.error('❌ Error submitting order:', error);
                                 setState((prev) => ({
                                     ...prev,
-                                    error: 'Error al procesar la orden',
+                                    error: 'Error processing the order',
                                     isTokenizing: false,
                                 }));
-                                alert('❌ El pago fue exitoso pero hubo un error al crear la orden. Por favor contacta a soporte.');
                             }
                         });
                         
@@ -313,7 +334,7 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                                 console.error('❌ Payment error:', error);
                                 setState((prev) => ({
                                     ...prev,
-                                    error: error?.message || 'Error al procesar el pago',
+                                    error: error?.message || 'Error processing payment',
                                     isTokenizing: false,
                                 }));
                             });
