@@ -8,9 +8,7 @@ import {
     toResolvableComponent,
 } from '@bigcommerce/checkout/payment-integration-api';
 
-const PAYSTAND_SCRIPT_ID = 'paystand_checkout';
-const PAYSTAND_SCRIPT_SRC = 'https://checkout.paystand.io/v4/js/paystand.checkout.js?env=staging';
-const PAYSTAND_CONFIG_ENDPOINT = 'https://de5a53673321.ngrok-free.app/api/paystand-config';
+import { getPaystandEndpoint, PAYSTAND_SCRIPT } from './config';
 
 interface PaystandConfig {
     publishableKey: string;
@@ -29,7 +27,7 @@ interface PaystandPaymentState {
  * Fetch Paystand configuration from backend
  */
 async function fetchPaystandConfig(storeHash: string): Promise<PaystandConfig> {
-    const response = await fetch(PAYSTAND_CONFIG_ENDPOINT, {
+    const response = await fetch(getPaystandEndpoint('config'), {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -66,7 +64,7 @@ async function addAdjustment(
     payerDiscount: number,
     payerId: string
 ): Promise<void> {
-    const response = await fetch('https://de5a53673321.ngrok-free.app/api/webhook/add-adjustment', {
+    const response = await fetch(getPaystandEndpoint('addAdjustment'), {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -156,7 +154,7 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
 
             // Otherwise, load the script for the first time
             const scriptLoader = getScriptLoader();
-            const existing = document.getElementById(PAYSTAND_SCRIPT_ID);
+            const existing = document.getElementById(PAYSTAND_SCRIPT.id);
 
             if (existing) {
                 existing.parentElement?.removeChild(existing);
@@ -167,7 +165,7 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
             const environment = state.config.useSandbox === 0 ? 'production' : 'staging';
             
             const attributes: Record<string, string> = {
-                id: PAYSTAND_SCRIPT_ID,
+                id: PAYSTAND_SCRIPT.id,
                 type: 'text/javascript',
                 'ps-mode': 'modal',
                 'ps-show': 'true',
@@ -288,7 +286,7 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                                         const storeHash = config?.storeProfile?.storeHash;
                                         
                                         if (storeHash) {
-                                            const response = await fetch('https://de5a53673321.ngrok-free.app/api/webhook/set-payer-id', {
+                                            const response = await fetch(getPaystandEndpoint('setPayerId'), {
                                                 method: 'POST',
                                                 headers: {
                                                     'Content-Type': 'application/json',
@@ -346,7 +344,7 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                 checkForPayStand();
             };
 
-            await scriptLoader.loadScript(PAYSTAND_SCRIPT_SRC, {
+            await scriptLoader.loadScript(PAYSTAND_SCRIPT.src, {
                 async: false,
                 attributes,
             });
@@ -368,7 +366,7 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
     // Cleanup script on unmount
     useEffect(() => {
         return () => {
-            const script = document.getElementById(PAYSTAND_SCRIPT_ID);
+            const script = document.getElementById(PAYSTAND_SCRIPT.id);
             if (script) {
                 script.parentElement?.removeChild(script);
             }
