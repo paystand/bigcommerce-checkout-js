@@ -15,12 +15,15 @@ interface PaystandConfig {
     customerId: string;
     updateOrderOn: string;
     useSandbox?: number;
+    checkoutPresetKey: string;
+    appClientId?: string;
 }
 
 interface PaystandPaymentState {
     isTokenizing: boolean;
     error: string | null;
     config: PaystandConfig | null;
+    paystandAccessToken: string | null;
 }
 
 /**
@@ -46,12 +49,81 @@ async function fetchPaystandConfig(storeHash: string): Promise<PaystandConfig> {
     }
 
     const apiData = result.data;
-    return {
+    
+    const config = {
         publishableKey: apiData.publishable_key || apiData.publishableKey,
         customerId: apiData.customer_id || apiData.customerId,
         updateOrderOn: apiData.update_order_on || apiData.updateOrderOn,
         useSandbox: apiData.use_sandbox ?? apiData.useSandbox,
+        checkoutPresetKey: apiData.presetCustom || 'default',
+        appClientId: apiData.app_client_id || apiData.appClientId,
     };
+    
+    return config;
+}
+
+/**
+ * Fetch customer JWT and validate it with backend to get Paystand access token
+ * Returns null if user is not logged in (guest user) or if any step fails
+ */
+async function getPaystandAccessToken(appClientId?: string): Promise<string | null> {
+    try {
+        if (!appClientId) {
+            return null;
+        }
+        
+        // Step 1: Get customer JWT from BigCommerce
+        const storeDomain = window.location.origin;
+        const jwtUrl = `${storeDomain}/customer/current.jwt?app_client_id=${appClientId}`;
+        
+        const jwtResponse = await fetch(jwtUrl, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+            }
+        });
+        
+        if (!jwtResponse.ok) {
+            return null;
+        }
+        
+        const customerJWTResponse = await jwtResponse.text();
+        
+        // Parse the JWT response to extract the token string
+        let customerJWT: string;
+        try {
+            const parsed = JSON.parse(customerJWTResponse);
+            customerJWT = parsed.token;
+        } catch (e) {
+            customerJWT = customerJWTResponse;
+        }
+        
+        // Step 2: Validate JWT with backend and get Paystand access token
+        const validateResponse = await fetch(getPaystandEndpoint('validateCustomerToken'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                token: customerJWT,
+            }),
+        });
+        
+        if (!validateResponse.ok) {
+            return null;
+        }
+        
+        const result = await validateResponse.json();
+        
+        if (!result.success || !result.token) {
+            return null;
+        }
+        
+        return result.token;
+        
+    } catch (error) {
+        return null;
+    }
 }
 
 /**
@@ -94,6 +166,7 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
         isTokenizing: false,
         error: null,
         config: null,
+        paystandAccessToken: null,
     });
 
     // Disable Place Order button when Paystand is selected
@@ -116,7 +189,23 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                 }
 
                 const paystandConfig = await fetchPaystandConfig(storeHash);
-                setState(prev => ({ ...prev, config: paystandConfig }));
+                
+                // Check if customer is guest BEFORE making any API calls
+                const customer = checkoutState.data.getCustomer();
+                const isGuest = customer?.isGuest ?? true; // Default to guest if no customer info
+                
+                let accessToken: string | null = null;
+                
+                if (!isGuest && paystandConfig.appClientId) {
+                    // Only fetch access token for logged-in users
+                    accessToken = await getPaystandAccessToken(paystandConfig.appClientId);
+                }
+                
+                setState(prev => ({ 
+                    ...prev, 
+                    config: paystandConfig,
+                    paystandAccessToken: accessToken
+                }));
             } catch (error) {
                 console.error('❌ Failed to load Paystand configuration:', error);
                 setState(prev => ({
@@ -164,12 +253,12 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
             const email = cartInfo?.email || '';
             const environment = state.config.useSandbox === 0 ? 'production' : 'staging';
             
+            // Base attributes (always included)
             const attributes: Record<string, string> = {
                 id: PAYSTAND_SCRIPT.id,
                 type: 'text/javascript',
                 'ps-mode': 'modal',
                 'ps-show': 'true',
-                'ps-publishable-key': state.config.publishableKey,
                 'ps-env': environment,
                 'ps-payerEmail': email,
                 'ps-fixedAmount': 'true',
@@ -180,6 +269,19 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                     cartId: cartInfo?.id,
                 }),
             };
+            
+            // Conditional attributes based on user type
+            if (state.paystandAccessToken) {
+                // LOGGED-IN USER: Add access token, DON'T add publishable-key and presetCustom
+                attributes['ps-accessToken'] = state.paystandAccessToken;
+                attributes['ps-checkoutType'] = "checkout_saved_funds";
+            } else {
+                // GUEST USER: Add publishable-key and presetCustom, NO access token
+                attributes['ps-publishable-key'] = state.config.publishableKey;
+                attributes['ps-presetCustom'] = state.config.checkoutPresetKey;
+            }
+
+            console.log('📋 Atributos enviados a la modal de Paystand:', attributes);
 
             const setupPayStandHandlers = () => {
                 // Listen for postMessage events from Paystand iframe
@@ -361,7 +463,7 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                 onUnhandledError(error);
             }
         }
-    }, [onUnhandledError, checkoutState, state.config, checkoutService]);
+    }, [onUnhandledError, checkoutState, state.config, state.paystandAccessToken, checkoutService]);
 
     // Cleanup script on unmount
     useEffect(() => {
