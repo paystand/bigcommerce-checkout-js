@@ -10,6 +10,7 @@ export const PAYSTAND_ENDPOINTS = {
     config: '/api/paystand-config',
     addAdjustment: '/api/webhook/add-adjustment',
     setPayerId: '/api/webhook/set-payer-id',
+    validateCustomerToken: '/api/webhook/validate-customer-token',
 } as const;
 
 // Paystand script configuration
