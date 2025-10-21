@@ -266,8 +266,8 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
 
             const cartInfo = checkoutState.data.getCart();
             const email = cartInfo?.email || '';
-            const environment = state.config.useSandbox === 0 ? 'live' : 'sandbox';
-            const domain = environment === 'sandbox' ? 'co' : 'com';
+            const environment = state.config.useSandbox === 0 ? 'live' : 'development';
+            const domain = environment === 'development' ? 'biz' : 'com';
             const PAYSTAND_SCRIPT_SRC = `https://checkout.paystand.${domain}/v4/js/paystand.checkout.js?env=${environment}`;
             
             // Base attributes (always included)
@@ -291,12 +291,13 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                 // LOGGED-IN USER: Add access token, DON'T add publishable-key and presetCustom
                 attributes['ps-accessToken'] = state.paystandAccessToken;
                 attributes['ps-checkoutType'] = "checkout_saved_funds";
+                attributes['ps-customerId'] = state.config.customerId;
             } else {
                 // GUEST USER: Add publishable-key and presetCustom, NO access token
                 attributes['ps-publishable-key'] = state.config.publishableKey;
                 attributes['ps-presetCustom'] = state.config.checkoutPresetKey;
             }
-
+            console.log('attributes', attributes);
 
             const setupPayStandHandlers = () => {
                 // Listen for postMessage events from Paystand iframe
