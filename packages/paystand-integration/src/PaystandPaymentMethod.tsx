@@ -297,7 +297,6 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                 attributes['ps-presetCustom'] = state.config.checkoutPresetKey;
             }
 
-            console.log('📋 Atributos enviados a la modal de Paystand:', attributes);
 
             const setupPayStandHandlers = () => {
                 // Listen for postMessage events from Paystand iframe
