@@ -24,10 +24,8 @@ The integration uses the following configuration (found in `PaystandPaymentMetho
 
 ```typescript
 const PAYSTAND_CONFIG = {
-    publishableKey: 'kmwywc0wl2uillzfxvti65vx',
-    feeSettingPlanId: 'qr4gmsa22s9emxz6atwdyfos',
-    dynamicDiscountingPlanId: '2nmhwx9kzjbvkp3kqfcyor7i',
-    environment: 'biz' as const,
+    publishableKey: '<publishableKey>',
+    environment: 'com' as const,
 };
 ```
 
@@ -35,9 +33,7 @@ const PAYSTAND_CONFIG = {
 
 ### Endpoints Used
 
-1. **Tokenization**: `POST https://api.paystand.co/v3/tokens`
-2. **Fee Calculation**: `POST https://api.paystand.biz/v3/FeeSplits/splitFees/public`
-3. **Payment Processing**: `POST https://api.paystand.biz/v3/payments/secure`
+ **Payment Processing**: `POST https://api.paystand.com/v3/payments/secure`
 
 ### Fee Structure
 
@@ -50,9 +46,6 @@ The integration calculates fees for different payment methods:
 
 ### PaystandApiService
 Handles all API communication with Paystand endpoints.
-
-### PaystandFeeCalculator
-Calculates and formats fees for different payment methods.
 
 ### PaystandPaymentMethod
 Main React component providing the payment interface.

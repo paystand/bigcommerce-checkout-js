@@ -227,9 +227,24 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
             }
             
             const checkoutInfo = checkoutState.data.getCheckout();
+            const customer = checkoutState.data.getCustomer();
             
             if (!checkoutInfo) {
                 throw new Error('Checkout data not available');
+            }
+            console.log('customer', customer);
+            // Get payer_id from customer attributes if logged in
+            let existingPayerId: string | undefined;
+            if (customer && !customer.isGuest) {
+                // Check if customer has attributes with payer_id
+                const customerData = customer as any; // Customer type may not include custom attributes
+                if (customerData.attributes && customerData.attributes.length > 0) {
+                    const payerIdAttr = customerData.attributes.find((attr: any) => attr.name === 'payer_id');
+                    if (payerIdAttr && payerIdAttr.value) {
+                        existingPayerId = payerIdAttr.value;
+                        console.log('✅ Found existing payer_id for logged in customer:', existingPayerId);
+                    }
+                }
             }
 
             // If PayStandCheckout already exists, just show it
@@ -251,7 +266,9 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
 
             const cartInfo = checkoutState.data.getCart();
             const email = cartInfo?.email || '';
-            const environment = state.config.useSandbox === 0 ? 'production' : 'staging';
+            const environment = state.config.useSandbox === 0 ? 'live' : 'sandbox';
+            const domain = environment === 'sandbox' ? 'co' : 'com';
+            const PAYSTAND_SCRIPT_SRC = `https://checkout.paystand.${domain}/v4/js/paystand.checkout.js?env=${environment}`;
             
             // Base attributes (always included)
             const attributes: Record<string, string> = {
@@ -263,10 +280,9 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                 'ps-payerEmail': email,
                 'ps-fixedAmount': 'true',
                 'ps-amount': checkoutInfo?.grandTotal.toString() || '0',
-                'ps-customerId': checkoutInfo.customer.id.toString(),
-                'ps-checkoutId': checkoutInfo.id,
                 'ps-paymentMeta': JSON.stringify({
                     cartId: cartInfo?.id,
+                    customerId: checkoutInfo.customer.id.toString(),
                 }),
             };
             
@@ -295,7 +311,7 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                                 isTokenizing: false,
                             }));
                         }
-                        
+
                         // Also check for closeDialog event
                         if (event.data.type === 'checkoutEvent' && event.data.response?.event?.type === 'closeDialog') {
                             setState((prev) => ({
@@ -305,14 +321,14 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                         }
                     }
                 };
-                
+
                 window.addEventListener('message', messageHandler);
 
                 const checkForPayStand = (attempts = 0) => {
                     const maxAttempts = 50;
                     if ((window as any).PayStandCheckout) {
                         const PayStandCheckout = (window as any).PayStandCheckout;
-                        
+
                         PayStandCheckout.onceLoaded(function () {
                             PayStandCheckout.update({
                                 settings: {
@@ -326,7 +342,6 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                                               remove: true
                                             }
                                         },
-                                        
                                     },
                                 },
                             });
@@ -334,10 +349,10 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
 
                         // Auto-submit after payment completion
                         PayStandCheckout.onComplete(async (paymentData: any) => {
-                            const payerId = paymentData.response.data.payerId;
+                            const payerId = paymentData.response.data.payerId || existingPayerId;
                             const payerDiscount = paymentData.response.data.feeSplit.payerDiscount;
                             const payerTotalFees = paymentData.response.data.feeSplit.payerTotalFees;
-                            
+
                             if (!paymentData || !paymentData.response || !paymentData.response.data || !paymentData.response.data.id) {
                                 setState((prev) => ({
                                     ...prev,
@@ -346,17 +361,17 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                                 }));
                                 return;
                             }
-                            
+
                             // Hide modal
                             if (PayStandCheckout.hideCheckout) {
                                 PayStandCheckout.hideCheckout();
                             }
-                            
+
                             // Set fees-discounts
                             try {
                                 const config = checkoutState.data.getConfig();
                                 const storeHash = config?.storeProfile?.storeHash;
-                                
+
                                 if (storeHash) {
                                     await addAdjustment(
                                         checkoutInfo.id,
@@ -365,7 +380,7 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                                         payerDiscount || 0,
                                         payerId
                                     );
-                                    
+
                                     await checkoutService.loadCheckout(checkoutInfo.id);
                                 }
                             } catch (adjustmentError) {
@@ -414,10 +429,6 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                                     // Redirect to order confirmation
                                     window.location.href = `/checkout/order-confirmation/${order.orderId}`;
                                 }
-
-                                
-
-
                             } catch (error) {
                                 console.error('❌ Error submitting order:', error);
                                 setState((prev) => ({
@@ -427,7 +438,7 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                                 }));
                             }
                         });
-                        
+
                         // Handle errors
                         if (PayStandCheckout.onError) {
                             PayStandCheckout.onError((error: any) => {
@@ -446,13 +457,12 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                 checkForPayStand();
             };
 
-            await scriptLoader.loadScript(PAYSTAND_SCRIPT.src, {
+            await scriptLoader.loadScript(PAYSTAND_SCRIPT_SRC, {
                 async: false,
                 attributes,
             });
-            
-            setupPayStandHandlers();
 
+            setupPayStandHandlers();
         } catch (error) {
             setState((prev) => ({
                 ...prev,
@@ -514,4 +524,3 @@ export default toResolvableComponent<PaymentMethodProps, PaymentMethodResolveId>
     PaystandPaymentMethod,
     [{ id: 'moneyorder', type: 'PAYMENT_TYPE_OFFLINE' }],
 );
-
