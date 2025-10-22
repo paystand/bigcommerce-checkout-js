@@ -275,7 +275,6 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
             if (!checkoutInfo) {
                 throw new Error('Checkout data not available');
             }
-            console.log('customer', customer);
             // Get payer_id from customer attributes if logged in
             let existingPayerId: string | undefined;
             if (customer && !customer.isGuest) {
@@ -346,9 +345,6 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                 attributes['ps-publishable-key'] = state.config.publishableKey;
                 attributes['ps-presetCustom'] = state.config.checkoutPresetKey;
             }
-
-            // Log all attributes being sent to the modal
-            console.log('📋 All attributes being sent to Paystand modal:', attributes);
 
             const setupPayStandHandlers = () => {
                 // Listen for postMessage events from Paystand iframe
