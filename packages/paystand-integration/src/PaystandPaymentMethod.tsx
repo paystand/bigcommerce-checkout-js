@@ -69,8 +69,6 @@ async function fetchPaystandConfig(storeHash: string): Promise<PaystandConfig> {
  */
 async function getCustomerPayerId(storeHash: string, customerId: number): Promise<string | null> {
     try {
-        console.log('🔍 Fetching customer payer ID for customer:', customerId, 'store:', storeHash);
-        
         const response = await fetch(getPaystandEndpoint('getCustomerPayerId'), {
             method: 'POST',
             headers: {
@@ -81,27 +79,20 @@ async function getCustomerPayerId(storeHash: string, customerId: number): Promis
                 customerId: customerId,
             }),
         });
-
-        console.log('📡 Customer payer ID response status:', response.status);
         
         if (!response.ok) {
-            console.error('❌ Failed to fetch customer payer ID:', response.statusText);
             return null;
         }
 
         const result = await response.json();
-        console.log('📋 Customer payer ID response:', result);
         
         if (!result.success || !result.data?.payerId) {
-            console.error('❌ Invalid response from customer payer ID service:', result);
             return null;
         }
         
-        console.log('✅ Customer payer ID obtained:', result.data.payerId);
         return result.data.payerId;
         
     } catch (error) {
-        console.error('❌ Error fetching customer payer ID:', error);
         return null;
     }
 }
@@ -239,32 +230,18 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                 const customer = checkoutState.data.getCustomer();
                 const isGuest = customer?.isGuest ?? true; // Default to guest if no customer info
                 
-                console.log('🔍 Customer info:', { isGuest, customerId: customer?.id, appClientId: paystandConfig.appClientId });
-                
                 let accessToken: string | null = null;
                 let customerPayerId: string | null = null;
                 
                 if (!isGuest && paystandConfig.appClientId) {
-                    console.log('✅ Customer is logged in, fetching access token and payer ID');
                     // Only fetch access token for logged-in users
                     accessToken = await getPaystandAccessToken(paystandConfig.appClientId);
                     
                     // Only fetch customer payer ID for logged-in users
                     if (customer?.id) {
-                        console.log('🔍 About to call getCustomerPayerId with:', { storeHash, customerId: customer.id });
                         customerPayerId = await getCustomerPayerId(storeHash, customer.id);
-                    } else {
-                        console.log('❌ No customer ID available');
                     }
-                } else {
-                    console.log('ℹ️ Skipping payer ID fetch - isGuest:', isGuest, 'appClientId:', paystandConfig.appClientId);
                 }
-                
-                console.log('📋 Final state:', { 
-                    hasAccessToken: !!accessToken, 
-                    hasCustomerPayerId: !!customerPayerId,
-                    customerPayerId: customerPayerId 
-                });
                 
                 setState(prev => ({ 
                     ...prev, 
@@ -346,6 +323,7 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                 'ps-payerEmail': email,
                 'ps-fixedAmount': 'true',
                 'ps-amount': checkoutInfo?.grandTotal.toString() || '0',
+                'ps-checkoutId': checkoutInfo?.id.toString() || '',
                 'ps-paymentMeta': JSON.stringify({
                     cartId: cartInfo?.id,
                     customerId: checkoutInfo.customer.id.toString(),
@@ -362,13 +340,11 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                 // Add payer ID only for logged-in users
                 if (state.customerPayerId) {
                     attributes['ps-payerId'] = state.customerPayerId;
-                    console.log('✅ Added ps-payerId attribute for logged-in user:', state.customerPayerId);
                 }
             } else {
                 // GUEST USER: Add publishable-key and presetCustom, NO access token
                 attributes['ps-publishable-key'] = state.config.publishableKey;
                 attributes['ps-presetCustom'] = state.config.checkoutPresetKey;
-                console.log('ℹ️ Guest user - no ps-payerId attribute added');
             }
 
             // Log all attributes being sent to the modal
