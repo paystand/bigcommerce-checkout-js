@@ -3,7 +3,8 @@
  */
 
 // Backend API base URL
-export const PAYSTAND_BACKEND_URL = 'https://bigcommerce.paystand.biz';
+// export const PAYSTAND_BACKEND_URL = 'https://bigcommerce.paystand.biz';
+export const PAYSTAND_BACKEND_URL = 'https://de5a53673321.ngrok-free.app';
 
 // Paystand API endpoints
 export const PAYSTAND_ENDPOINTS = {
@@ -11,6 +12,7 @@ export const PAYSTAND_ENDPOINTS = {
     addAdjustment: '/api/webhook/add-adjustment',
     setPayerId: '/api/webhook/set-payer-id',
     validateCustomerToken: '/api/webhook/validate-customer-token',
+    getCustomerPayerId: '/api/customer/payer-id',
 } as const;
 
 // Paystand script configuration
