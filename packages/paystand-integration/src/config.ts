@@ -3,8 +3,7 @@
  */
 
 // Backend API base URL
-export const PAYSTAND_BACKEND_URL = 'https://bigcommerce.paystand.biz';
-// export const PAYSTAND_BACKEND_URL = 'https://de5a53673321.ngrok-free.app';
+export const PAYSTAND_BACKEND_URL = 'https://bigcommerce.paystand.com';
 
 // Paystand API endpoints
 export const PAYSTAND_ENDPOINTS = {
@@ -18,7 +17,7 @@ export const PAYSTAND_ENDPOINTS = {
 // Paystand script configuration
 export const PAYSTAND_SCRIPT = {
     id: 'paystand_checkout',
-    src: 'https://checkout.paystand.io/v4/js/paystand.checkout.js?env=staging',
+    src: 'https://checkout.paystand.com/v4/js/paystand.checkout.js?env=live',
 } as const;
 
 // Paystand retry configuration

@@ -1,6 +1,6 @@
 /* eslint-disable */
 import { getScriptLoader } from '@bigcommerce/script-loader';
-import React, { type FunctionComponent, useCallback, useEffect, useState } from 'react';
+import React, { type FunctionComponent, useCallback, useEffect, useState, useRef } from 'react';
 
 import {
     type PaymentMethodProps,
@@ -204,7 +204,7 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
         paystandAccessToken: null,
         customerPayerId: null,
     });
-
+    const messageHandlerRef = useRef<((event: MessageEvent) => void) | null>(null);
     // Disable Place Order button when Paystand is selected
     useEffect(() => {
         paymentForm.disableSubmit(method, true);
@@ -308,8 +308,8 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
 
             const cartInfo = checkoutState.data.getCart();
             const email = cartInfo?.email || '';
-            const environment = state.config.useSandbox === 0 ? 'live' : 'development';
-            const domain = environment === 'development' ? 'biz' : 'com';
+            const environment = state.config.useSandbox === 0 ? 'live' : 'sandbox';
+            const domain = environment === 'sandbox' ? 'co' : 'com';
             const PAYSTAND_SCRIPT_SRC = `https://checkout.paystand.${domain}/v4/js/paystand.checkout.js?env=${environment}`;
             
             // Base attributes (always included)
@@ -347,28 +347,22 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
             }
 
             const setupPayStandHandlers = () => {
-                // Listen for postMessage events from Paystand iframe
+                // Define the message handler
                 const messageHandler = (event: MessageEvent) => {
-                    // Only process messages from paystand domains
                     if (event.origin.includes('paystand') && event.data && typeof event.data === 'object') {
-                        // Check for modal close events
                         if (event.data.type === 'checkoutEvent' && event.data.response?.event?.type === 'closeModal') {
-                            setState((prev) => ({
-                                ...prev,
-                                isTokenizing: false,
-                            }));
+                            setState((prev) => ({ ...prev, isTokenizing: false }));
                         }
-
-                        // Also check for closeDialog event
                         if (event.data.type === 'checkoutEvent' && event.data.response?.event?.type === 'closeDialog') {
-                            setState((prev) => ({
-                                ...prev,
-                                isTokenizing: false,
-                            }));
+                            setState((prev) => ({ ...prev, isTokenizing: false }));
                         }
                     }
                 };
 
+                // Store the handler in the ref
+                messageHandlerRef.current = messageHandler;
+
+                // Add the event listener
                 window.addEventListener('message', messageHandler);
 
                 const checkForPayStand = (attempts = 0) => {
@@ -525,6 +519,9 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
     // Cleanup script on unmount
     useEffect(() => {
         return () => {
+            if (messageHandlerRef.current) {
+                window.removeEventListener('message', messageHandlerRef.current);
+            }
             const script = document.getElementById(PAYSTAND_SCRIPT.id);
             if (script) {
                 script.parentElement?.removeChild(script);
