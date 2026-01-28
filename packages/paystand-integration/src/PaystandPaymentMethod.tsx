@@ -8,13 +8,13 @@ import {
     toResolvableComponent,
 } from '@bigcommerce/checkout/payment-integration-api';
 
-import { getPaystandEndpoint, PAYSTAND_SCRIPT } from './config';
+import { getPaystandEndpoint, getPaystandEnvironment, getPaystandDomain, PAYSTAND_ENV, PAYSTAND_SCRIPT } from './config';
 
 interface PaystandConfig {
     publishableKey: string;
     customerId: string;
     updateOrderOn: string;
-    useSandbox?: number;
+    useSandbox?: number; // 0 = live, 1 = non-live
     checkoutPresetKey: string;
     appClientId?: string;
 }
@@ -51,11 +51,14 @@ async function fetchPaystandConfig(storeHash: string): Promise<PaystandConfig> {
 
     const apiData = result.data;
     
+    // Extract useSandbox value (0 = live, 1 = non-live)
+    const useSandboxValue = apiData.use_sandbox ?? apiData.useSandbox;
+    
     const config = {
         publishableKey: apiData.publishable_key || apiData.publishableKey,
         customerId: apiData.customer_id || apiData.customerId,
         updateOrderOn: apiData.update_order_on || apiData.updateOrderOn,
-        useSandbox: apiData.use_sandbox ?? apiData.useSandbox,
+        useSandbox: useSandboxValue, // 0 = live, 1 = non-live
         checkoutPresetKey: apiData.presetCustom || 'default',
         appClientId: apiData.app_client_id || apiData.appClientId,
     };
@@ -67,9 +70,9 @@ async function fetchPaystandConfig(storeHash: string): Promise<PaystandConfig> {
  * Get customer payer ID from external service
  * Only called for logged-in customers
  */
-async function getCustomerPayerId(storeHash: string, customerId: number): Promise<string | null> {
+async function getCustomerPayerId(storeHash: string, customerId: number, useSandbox?: number): Promise<string | null> {
     try {
-        const response = await fetch(getPaystandEndpoint('getCustomerPayerId'), {
+        const response = await fetch(getPaystandEndpoint('getCustomerPayerId', useSandbox, PAYSTAND_ENV), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -101,7 +104,7 @@ async function getCustomerPayerId(storeHash: string, customerId: number): Promis
  * Fetch customer JWT and validate it with backend to get Paystand access token
  * Returns null if user is not logged in (guest user) or if any step fails
  */
-async function getPaystandAccessToken(appClientId?: string): Promise<string | null> {
+async function getPaystandAccessToken(appClientId?: string, useSandbox?: number): Promise<string | null> {
     try {
         if (!appClientId) {
             return null;
@@ -134,7 +137,7 @@ async function getPaystandAccessToken(appClientId?: string): Promise<string | nu
         }
         
         // Step 2: Validate JWT with backend and get Paystand access token
-        const validateResponse = await fetch(getPaystandEndpoint('validateCustomerToken'), {
+        const validateResponse = await fetch(getPaystandEndpoint('validateCustomerToken', useSandbox, PAYSTAND_ENV), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -169,9 +172,10 @@ async function addAdjustment(
     storeHash: string,
     payerTotalFees: number,
     payerDiscount: number,
-    payerId: string
+    payerId: string,
+    useSandbox?: number,
 ): Promise<void> {
-    const response = await fetch(getPaystandEndpoint('addAdjustment'), {
+    const response = await fetch(getPaystandEndpoint('addAdjustment', useSandbox, PAYSTAND_ENV), {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -235,11 +239,11 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                 
                 if (!isGuest && paystandConfig.appClientId) {
                     // Only fetch access token for logged-in users
-                    accessToken = await getPaystandAccessToken(paystandConfig.appClientId);
+                    accessToken = await getPaystandAccessToken(paystandConfig.appClientId, paystandConfig.useSandbox);
                     
                     // Only fetch customer payer ID for logged-in users
                     if (customer?.id) {
-                        customerPayerId = await getCustomerPayerId(storeHash, customer.id);
+                        customerPayerId = await getCustomerPayerId(storeHash, customer.id, paystandConfig.useSandbox);
                     }
                 }
                 
@@ -308,8 +312,10 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
 
             const cartInfo = checkoutState.data.getCart();
             const email = cartInfo?.email || '';
-            const environment = state.config.useSandbox === 0 ? 'live' : 'sandbox';
-            const domain = environment === 'sandbox' ? 'co' : 'com';
+            // useSandbox comes from the /api/paystand-config endpoint response
+            // 0 = live (.com), 1 = non-live (determined by PAYSTAND_ENV in config.ts: sandbox .co, staging .io, or development .biz)
+            const environment = getPaystandEnvironment(state.config.useSandbox, PAYSTAND_ENV);
+            const domain = getPaystandDomain(environment);
             const PAYSTAND_SCRIPT_SRC = `https://checkout.paystand.${domain}/v4/js/paystand.checkout.js?env=${environment}`;
             
             // Base attributes (always included)
@@ -419,7 +425,8 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                                         storeHash,
                                         payerTotalFees || 0,
                                         payerDiscount || 0,
-                                        payerId
+                                        payerId,
+                                        state.config?.useSandbox,
                                     );
 
                                     await checkoutService.loadCheckout(checkoutInfo.id);
@@ -444,7 +451,7 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                                         const storeHash = config?.storeProfile?.storeHash;
                                         
                                         if (storeHash) {
-                                            const response = await fetch(getPaystandEndpoint('setPayerId'), {
+                                            const response = await fetch(getPaystandEndpoint('setPayerId', state.config?.useSandbox, PAYSTAND_ENV), {
                                                 method: 'POST',
                                                 headers: {
                                                     'Content-Type': 'application/json',
