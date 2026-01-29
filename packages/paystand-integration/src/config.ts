@@ -8,7 +8,7 @@ export type PaystandEnvironment = 'live' | 'sandbox' | 'staging' | 'development'
 // PAYSTAND_ENV configuration
 // Set this to 'staging', 'sandbox', or 'development' when useSandbox === 1
 // Leave as undefined to default to 'sandbox' when useSandbox === 1
-export const PAYSTAND_ENV: 'staging' | 'sandbox' | 'development' | undefined = 'development';
+export const PAYSTAND_ENV: 'staging' | 'sandbox' | 'development' | undefined = 'sandbox';
 
 // Environment to domain mapping
 export const PAYSTAND_ENVIRONMENT_DOMAIN_MAP: Record<PaystandEnvironment, string> = {
