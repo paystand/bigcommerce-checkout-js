@@ -81,6 +81,10 @@ export function getPaystandEnvironment(
             return 'development';
         }
 
+        if (paystandEnv === 'sandbox') {
+            return 'sandbox';
+        }
+
         // Default to sandbox when useSandbox === 1 and no specific PAYSTAND_ENV is provided
         return 'sandbox';
     }
@@ -110,9 +114,13 @@ export function getPaystandEndpoint(
     useSandbox?: number,
     paystandEnv?: string,
 ): string {
-    // For config endpoint, always use staging URL to get the configuration
+    // For config endpoint, use the environment based on PAYSTAND_ENV if available
+    // If PAYSTAND_ENV is set, assume useSandbox === 1 and use that environment
+    // Otherwise, default to staging
     if (endpoint === 'config') {
-        return `${PAYSTAND_BACKEND_URLS.staging}${PAYSTAND_ENDPOINTS[endpoint]}`;
+        const configEnv = PAYSTAND_ENV ? getPaystandEnvironment(1, PAYSTAND_ENV) : 'staging';
+
+        return `${PAYSTAND_BACKEND_URLS[configEnv]}${PAYSTAND_ENDPOINTS[endpoint]}`;
     }
 
     // For other endpoints, use the appropriate URL based on useSandbox and PAYSTAND_ENV
