@@ -8,7 +8,7 @@ export type PaystandEnvironment = 'live' | 'sandbox' | 'staging' | 'development'
 // PAYSTAND_ENV configuration
 // Set this to 'staging', 'sandbox', or 'development' when useSandbox === 1
 // Leave as undefined to default to 'sandbox' when useSandbox === 1
-export const PAYSTAND_ENV: 'staging' | 'sandbox' | 'development' | undefined = 'sandbox';
+export const PAYSTAND_ENV: 'staging' | 'sandbox' | 'development' | undefined = 'development';
 
 // Environment to domain mapping
 export const PAYSTAND_ENVIRONMENT_DOMAIN_MAP: Record<PaystandEnvironment, string> = {
@@ -114,18 +114,19 @@ export function getPaystandEndpoint(
     useSandbox?: number,
     paystandEnv?: string,
 ): string {
-    // For config endpoint, use the environment based on PAYSTAND_ENV if available
-    // If PAYSTAND_ENV is set, assume useSandbox === 1 and use that environment
-    // Otherwise, default to staging
-    if (endpoint === 'config') {
-        const configEnv = PAYSTAND_ENV ? getPaystandEnvironment(1, PAYSTAND_ENV) : 'staging';
-
-        return `${PAYSTAND_BACKEND_URLS[configEnv]}${PAYSTAND_ENDPOINTS[endpoint]}`;
+    // If useSandbox is 0 (live), always use live environment
+    if (useSandbox === 0) {
+        return `${PAYSTAND_BACKEND_URLS.live}${PAYSTAND_ENDPOINTS[endpoint]}`;
     }
 
-    // For other endpoints, use the appropriate URL based on useSandbox and PAYSTAND_ENV
-    const env = getPaystandEnvironment(useSandbox, paystandEnv);
-    const baseUrl = PAYSTAND_BACKEND_URLS[env];
+    // If useSandbox is 1 (non-live), use PAYSTAND_ENV to determine environment
+    if (useSandbox === 1) {
+        const env = getPaystandEnvironment(1, paystandEnv || PAYSTAND_ENV);
 
-    return `${baseUrl}${PAYSTAND_ENDPOINTS[endpoint]}`;
+        return `${PAYSTAND_BACKEND_URLS[env]}${PAYSTAND_ENDPOINTS[endpoint]}`;
+    }
+
+    // If useSandbox is not provided, always default to live
+    // The first call to config endpoint will always go to .com
+    return `${PAYSTAND_BACKEND_URLS.live}${PAYSTAND_ENDPOINTS[endpoint]}`;
 }

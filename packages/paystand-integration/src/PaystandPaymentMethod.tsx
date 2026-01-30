@@ -28,10 +28,95 @@ interface PaystandPaymentState {
 }
 
 /**
- * Fetch Paystand configuration from backend
+ * Development/Testing Configuration
+ * 
+ * FORCE_PAYSTAND_ENV:
+ * - true: Skip .com call, go directly to PAYSTAND_ENV endpoint (faster for development)
+ * - false: Use production logic (call .com first, then PAYSTAND_ENV if needed)
+ * 
+ * Set FORCE_PAYSTAND_ENV = false for production!
  */
-async function fetchPaystandConfig(storeHash: string): Promise<PaystandConfig> {
-    const response = await fetch(getPaystandEndpoint('config'), {
+const FORCE_PAYSTAND_ENV = false; // Set to false in production
+
+/**
+ * Fetch Paystand configuration from backend
+ * Strategy: 
+ * - If FORCE_PAYSTAND_ENV = true: Go directly to PAYSTAND_ENV endpoint (development mode)
+ * - If FORCE_PAYSTAND_ENV = false: Call .com first, then PAYSTAND_ENV if use_sandbox=1 (production mode)
+ */
+async function fetchPaystandConfig(storeHash: string, useSandbox?: number): Promise<PaystandConfig> {
+    // If useSandbox is already known, use it directly
+    if (useSandbox !== undefined) {
+        const response = await fetch(getPaystandEndpoint('config', useSandbox, PAYSTAND_ENV), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ store_hash: storeHash }),
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to fetch Paystand config: ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        
+        if (!result.success || !result.data) {
+            throw new Error('Invalid response from Paystand config endpoint');
+        }
+
+        const apiData = result.data;
+        const useSandboxValue = apiData.use_sandbox ?? apiData.useSandbox;
+        
+        return {
+            publishableKey: apiData.publishable_key || apiData.publishableKey,
+            customerId: apiData.customer_id || apiData.customerId,
+            updateOrderOn: apiData.update_order_on || apiData.updateOrderOn,
+            useSandbox: useSandboxValue,
+            checkoutPresetKey: apiData.presetCustom || 'default',
+            appClientId: apiData.app_client_id || apiData.appClientId,
+        };
+    }
+
+    // DEVELOPMENT MODE: Skip .com and go directly to PAYSTAND_ENV
+    if (FORCE_PAYSTAND_ENV) {
+        const directEndpoint = getPaystandEndpoint('config', 1, PAYSTAND_ENV);
+        
+        const response = await fetch(directEndpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ store_hash: storeHash }),
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to fetch Paystand config from ${PAYSTAND_ENV}: ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        
+        if (!result.success || !result.data) {
+            throw new Error('Invalid response from Paystand config endpoint');
+        }
+
+        const apiData = result.data;
+        const useSandboxValue = apiData.use_sandbox ?? apiData.useSandbox;
+        
+        return {
+            publishableKey: apiData.publishable_key || apiData.publishableKey,
+            customerId: apiData.customer_id || apiData.customerId,
+            updateOrderOn: apiData.update_order_on || apiData.updateOrderOn,
+            useSandbox: useSandboxValue,
+            checkoutPresetKey: apiData.presetCustom || 'default',
+            appClientId: apiData.app_client_id || apiData.appClientId,
+        };
+    }
+
+    // PRODUCTION MODE: STEP 1 - First call ALWAYS goes to .com (live)
+    const liveEndpoint = getPaystandEndpoint('config', undefined, PAYSTAND_ENV);
+    
+    const liveResponse = await fetch(liveEndpoint, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -39,31 +124,64 @@ async function fetchPaystandConfig(storeHash: string): Promise<PaystandConfig> {
         body: JSON.stringify({ store_hash: storeHash }),
     });
 
-    if (!response.ok) {
-        throw new Error(`Failed to fetch Paystand config: ${response.statusText}`);
+    if (!liveResponse.ok) {
+        throw new Error(`Failed to fetch Paystand config from live: ${liveResponse.statusText}`);
     }
 
-    const result = await response.json();
+    const liveResult = await liveResponse.json();
     
-    if (!result.success || !result.data) {
+    if (!liveResult.success || !liveResult.data) {
         throw new Error('Invalid response from Paystand config endpoint');
     }
 
-    const apiData = result.data;
+    const liveData = liveResult.data;
+    const useSandboxValue = liveData.use_sandbox ?? liveData.useSandbox;
     
-    // Extract useSandbox value (0 = live, 1 = non-live)
-    const useSandboxValue = apiData.use_sandbox ?? apiData.useSandbox;
+    // STEP 2: Check use_sandbox value
+    if (useSandboxValue === 0) {
+        // use_sandbox is OFF - use live credentials
+        return {
+            publishableKey: liveData.publishable_key || liveData.publishableKey,
+            customerId: liveData.customer_id || liveData.customerId,
+            updateOrderOn: liveData.update_order_on || liveData.updateOrderOn,
+            useSandbox: useSandboxValue,
+            checkoutPresetKey: liveData.presetCustom || 'default',
+            appClientId: liveData.app_client_id || liveData.appClientId,
+        };
+    }
     
-    const config = {
-        publishableKey: apiData.publishable_key || apiData.publishableKey,
-        customerId: apiData.customer_id || apiData.customerId,
-        updateOrderOn: apiData.update_order_on || apiData.updateOrderOn,
-        useSandbox: useSandboxValue, // 0 = live, 1 = non-live
-        checkoutPresetKey: apiData.presetCustom || 'default',
-        appClientId: apiData.app_client_id || apiData.appClientId,
+    // STEP 3: use_sandbox is ON - make second call to PAYSTAND_ENV endpoint
+    const sandboxEndpoint = getPaystandEndpoint('config', 1, PAYSTAND_ENV);
+    
+    const sandboxResponse = await fetch(sandboxEndpoint, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ store_hash: storeHash }),
+    });
+
+    if (!sandboxResponse.ok) {
+        throw new Error(`Failed to fetch Paystand config from sandbox: ${sandboxResponse.statusText}`);
+    }
+
+    const sandboxResult = await sandboxResponse.json();
+    
+    if (!sandboxResult.success || !sandboxResult.data) {
+        throw new Error('Invalid response from Paystand sandbox config endpoint');
+    }
+
+    const sandboxData = sandboxResult.data;
+    
+    // Use sandbox credentials (not live credentials)
+    return {
+        publishableKey: sandboxData.publishable_key || sandboxData.publishableKey,
+        customerId: sandboxData.customer_id || sandboxData.customerId,
+        updateOrderOn: sandboxData.update_order_on || sandboxData.updateOrderOn,
+        useSandbox: sandboxData.use_sandbox ?? sandboxData.useSandbox,
+        checkoutPresetKey: sandboxData.presetCustom || 'default',
+        appClientId: sandboxData.app_client_id || sandboxData.appClientId,
     };
-    
-    return config;
 }
 
 /**
@@ -288,7 +406,6 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                     const payerIdAttr = customerData.attributes.find((attr: any) => attr.name === 'payer_id');
                     if (payerIdAttr && payerIdAttr.value) {
                         existingPayerId = payerIdAttr.value;
-                        console.log('✅ Found existing payer_id for logged in customer:', existingPayerId);
                     }
                 }
             }
@@ -463,9 +580,7 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                                                 }),
                                             });
 
-                                            if (response.ok) {
-                                                console.log('✅ Payer ID set successfully:', payerId);
-                                            } else {
+                                            if (!response.ok) {
                                                 console.error('❌ Failed to set payer ID:', response.statusText);
                                             }
                                         }
