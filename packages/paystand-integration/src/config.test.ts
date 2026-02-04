@@ -2,12 +2,31 @@ import {
     getPaystandDomain,
     getPaystandEndpoint,
     getPaystandEnvironment,
+    getUseSandboxFromEnv,
     PAYSTAND_BACKEND_URLS,
     PAYSTAND_ENDPOINTS,
     PAYSTAND_ENV,
 } from './config';
 
 describe('Paystand Configuration', () => {
+    describe('getUseSandboxFromEnv', () => {
+        it('should return 0 (live) when paystandEnv is "live"', () => {
+            expect(getUseSandboxFromEnv('live')).toBe(0);
+        });
+
+        it('should return 1 (sandbox) when paystandEnv is "sandbox"', () => {
+            expect(getUseSandboxFromEnv('sandbox')).toBe(1);
+        });
+
+        it('should return 1 (sandbox) when paystandEnv is "development"', () => {
+            expect(getUseSandboxFromEnv('development')).toBe(1);
+        });
+
+        it('should return 1 (sandbox) when paystandEnv is "staging"', () => {
+            expect(getUseSandboxFromEnv('staging')).toBe(1);
+        });
+    });
+
     describe('getPaystandEnvironment', () => {
         it('should return live when useSandbox is 0', () => {
             expect(getPaystandEnvironment(0)).toBe('live');
@@ -204,11 +223,9 @@ describe('Paystand Configuration', () => {
                 );
             });
 
-            it('should use PAYSTAND_ENV when useSandbox is 1 and paystandEnv is undefined', () => {
-                // When paystandEnv is undefined, it should use PAYSTAND_ENV as fallback
-                const expectedEnv = PAYSTAND_ENV
-                    ? getPaystandEnvironment(1, PAYSTAND_ENV)
-                    : 'sandbox';
+            it('should use PAYSTAND_ENV when useSandbox is 1 and paystandEnv is not provided', () => {
+                // When paystandEnv is not provided, it should use PAYSTAND_ENV as fallback
+                const expectedEnv = getPaystandEnvironment(1, PAYSTAND_ENV);
 
                 expect(getPaystandEndpoint('addAdjustment', 1)).toBe(
                     `${PAYSTAND_BACKEND_URLS[expectedEnv]}${PAYSTAND_ENDPOINTS.addAdjustment}`,
@@ -219,7 +236,7 @@ describe('Paystand Configuration', () => {
             });
         });
 
-        describe('critical: first call always goes to .com, then use_sandbox determines next steps', () => {
+        describe('critical: PAYSTAND_ENV determines endpoint (single call strategy)', () => {
             it('should use .com for config endpoint when useSandbox is 0', () => {
                 // When useSandbox is 0 (live), config endpoint should go to .com
                 const configUrl = getPaystandEndpoint('config', 0);
@@ -234,7 +251,6 @@ describe('Paystand Configuration', () => {
 
             it('should use PAYSTAND_ENV for config endpoint when useSandbox is 1', () => {
                 // When useSandbox is 1, should use PAYSTAND_ENV to determine environment
-                // This is the SECOND call after detecting use_sandbox=1 from .com
                 const configUrl = getPaystandEndpoint('config', 1, 'development');
 
                 expect(configUrl).toBe('https://bigcommerce.paystand.biz/api/paystand-config');
@@ -242,12 +258,34 @@ describe('Paystand Configuration', () => {
                 expect(configUrl).not.toContain('bigcommerce.paystand.com');
             });
 
-            it('should use .com when useSandbox is undefined (first call always)', () => {
-                // First call without useSandbox should ALWAYS go to .com
+            it('should use .com when useSandbox is undefined (defaults to live)', () => {
+                // When useSandbox is not provided, should default to live (.com)
                 const configUrl = getPaystandEndpoint('config');
 
                 expect(configUrl).toBe('https://bigcommerce.paystand.com/api/paystand-config');
                 expect(configUrl).toContain('bigcommerce.paystand.com');
+            });
+
+            it('should route based on PAYSTAND_ENV via getUseSandboxFromEnv', () => {
+                // Test the integration: PAYSTAND_ENV → useSandbox → endpoint
+
+                // Production: 'live' PAYSTAND_ENV → useSandbox = 0 → .com
+                const prodUseSandbox = getUseSandboxFromEnv('live');
+                const prodUrl = getPaystandEndpoint('config', prodUseSandbox);
+
+                expect(prodUrl).toContain('bigcommerce.paystand.com');
+
+                // Development: 'development' → useSandbox = 1 → .biz
+                const devUseSandbox = getUseSandboxFromEnv('development');
+                const devUrl = getPaystandEndpoint('config', devUseSandbox, 'development');
+
+                expect(devUrl).toContain('bigcommerce.paystand.biz');
+
+                // Sandbox: 'sandbox' → useSandbox = 1 → .co
+                const sandboxUseSandbox = getUseSandboxFromEnv('sandbox');
+                const sandboxUrl = getPaystandEndpoint('config', sandboxUseSandbox, 'sandbox');
+
+                expect(sandboxUrl).toContain('bigcommerce.paystand.co');
             });
 
             it('should use .com for ALL endpoints when useSandbox is 0, regardless of PAYSTAND_ENV', () => {

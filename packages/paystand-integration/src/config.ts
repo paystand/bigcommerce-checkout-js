@@ -6,9 +6,12 @@
 export type PaystandEnvironment = 'live' | 'sandbox' | 'staging' | 'development';
 
 // PAYSTAND_ENV configuration
-// Set this to 'staging', 'sandbox', or 'development' when useSandbox === 1
-// Leave as undefined to default to 'sandbox' when useSandbox === 1
-export const PAYSTAND_ENV: 'staging' | 'sandbox' | 'development' | undefined = 'development';
+// This is the SOURCE OF TRUTH for determining which Paystand endpoint to use:
+// - 'live': Production/Live → bigcommerce.paystand.com (use_sandbox = 0)
+// - 'development': Development → bigcommerce.paystand.biz (use_sandbox = 1)
+// - 'staging': Staging → bigcommerce.paystand.io (use_sandbox = 1)
+// - 'sandbox': Sandbox → bigcommerce.paystand.co (use_sandbox = 1)
+export const PAYSTAND_ENV: PaystandEnvironment = 'sandbox';
 
 // Environment to domain mapping
 export const PAYSTAND_ENVIRONMENT_DOMAIN_MAP: Record<PaystandEnvironment, string> = {
@@ -55,6 +58,21 @@ export const PAYSTAND_RETRY = {
     maxAttempts: 50,
     intervalMs: 100,
 } as const;
+
+/**
+ * Determine use_sandbox value based on PAYSTAND_ENV
+ * @param {PaystandEnvironment} [paystandEnv] - PAYSTAND_ENV variable ('live', 'staging', 'sandbox', or 'development')
+ * @returns {number} 0 for live, 1 for non-live environments
+ */
+export function getUseSandboxFromEnv(paystandEnv?: PaystandEnvironment): number {
+    // If explicitly 'live', use_sandbox = 0
+    if (paystandEnv === 'live') {
+        return 0;
+    }
+
+    // For any non-live environment (sandbox, staging, development), use_sandbox = 1
+    return 1;
+}
 
 /**
  * Map useSandbox number and PAYSTAND_ENV to environment type
