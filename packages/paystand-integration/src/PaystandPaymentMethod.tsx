@@ -337,6 +337,7 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                     customerId: checkoutInfo.customer.id.toString(),
                     paymentSource: 'bigcommerce',
                 }),
+                'ps-paymentSource': 'bigcommerce',
             };
             
             // Conditional attributes based on user type
