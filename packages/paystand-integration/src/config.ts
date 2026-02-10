@@ -11,7 +11,7 @@ export type PaystandEnvironment = 'live' | 'sandbox' | 'staging' | 'development'
 // - 'development': Development → bigcommerce.paystand.biz (use_sandbox = 1)
 // - 'staging': Staging → bigcommerce.paystand.io (use_sandbox = 1)
 // - 'sandbox': Sandbox → bigcommerce.paystand.co (use_sandbox = 1)
-export const PAYSTAND_ENV: PaystandEnvironment = 'sandbox';
+export const PAYSTAND_ENV: PaystandEnvironment = 'live';
 
 // Environment to domain mapping
 export const PAYSTAND_ENVIRONMENT_DOMAIN_MAP: Record<PaystandEnvironment, string> = {
@@ -91,16 +91,12 @@ export function getPaystandEnvironment(
 
     // If useSandbox is 1, use PAYSTAND_ENV to determine which non-live environment
     if (useSandbox === 1) {
-        if (paystandEnv === 'staging') {
-            return 'staging';
-        }
-
-        if (paystandEnv === 'development') {
-            return 'development';
-        }
-
-        if (paystandEnv === 'sandbox') {
-            return 'sandbox';
+        if (
+            paystandEnv === 'staging' ||
+            paystandEnv === 'development' ||
+            paystandEnv === 'sandbox'
+        ) {
+            return paystandEnv;
         }
 
         // Default to sandbox when useSandbox === 1 and no specific PAYSTAND_ENV is provided
