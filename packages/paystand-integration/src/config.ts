@@ -2,8 +2,36 @@
  * Paystand Integration Configuration
  */
 
-// Backend API base URL
-export const PAYSTAND_BACKEND_URL = 'https://bigcommerce.paystand.com';
+// Environment types
+export type PaystandEnvironment = 'live' | 'sandbox' | 'staging' | 'development';
+
+// PAYSTAND_ENV configuration
+// This is the SOURCE OF TRUTH for determining which Paystand endpoint to use:
+// - 'live': Production/Live → bigcommerce.paystand.com (use_sandbox = 0)
+// - 'development': Development → bigcommerce.paystand.biz (use_sandbox = 1)
+// - 'staging': Staging → bigcommerce.paystand.io (use_sandbox = 1)
+// - 'sandbox': Sandbox → bigcommerce.paystand.co (use_sandbox = 1)
+export const PAYSTAND_ENV: PaystandEnvironment = 'live';
+
+// Environment to domain mapping
+export const PAYSTAND_ENVIRONMENT_DOMAIN_MAP: Record<PaystandEnvironment, string> = {
+    live: 'com',
+    sandbox: 'co',
+    staging: 'io',
+    development: 'biz',
+} as const;
+
+// Backend API base URLs by environment
+export const PAYSTAND_BACKEND_URLS: Record<PaystandEnvironment, string> = {
+    live: 'https://bigcommerce.paystand.com',
+    sandbox: 'https://bigcommerce.paystand.co',
+    staging: 'https://bigcommerce.paystand.io',
+    development: 'https://bigcommerce.paystand.biz',
+} as const;
+
+// Legacy exports for backward compatibility
+export const PAYSTAND_BACKEND_URL = PAYSTAND_BACKEND_URLS.live;
+export const PAYSTAND_BACKEND_SANDBOX_URL = PAYSTAND_BACKEND_URLS.staging;
 
 // Paystand API endpoints
 export const PAYSTAND_ENDPOINTS = {
@@ -20,6 +48,11 @@ export const PAYSTAND_SCRIPT = {
     src: 'https://checkout.paystand.com/v4/js/paystand.checkout.js?env=live',
 } as const;
 
+export const PAYSTAND_SCRIPT_SANDBOX = {
+    id: 'paystand_checkout_sandbox',
+    src: 'https://checkout.paystand.io/v4/js/paystand.checkout.js?env=staging',
+} as const;
+
 // Paystand retry configuration
 export const PAYSTAND_RETRY = {
     maxAttempts: 50,
@@ -27,8 +60,87 @@ export const PAYSTAND_RETRY = {
 } as const;
 
 /**
- * Build full URL for a Paystand endpoint
+ * Determine use_sandbox value based on PAYSTAND_ENV
+ * @param {PaystandEnvironment} [paystandEnv] - PAYSTAND_ENV variable ('live', 'staging', 'sandbox', or 'development')
+ * @returns {number} 0 for live, 1 for non-live environments
  */
-export function getPaystandEndpoint(endpoint: keyof typeof PAYSTAND_ENDPOINTS): string {
-    return `${PAYSTAND_BACKEND_URL}${PAYSTAND_ENDPOINTS[endpoint]}`;
+export function getUseSandboxFromEnv(paystandEnv?: PaystandEnvironment): number {
+    // If explicitly 'live', use_sandbox = 0
+    if (paystandEnv === 'live') {
+        return 0;
+    }
+
+    // For any non-live environment (sandbox, staging, development), use_sandbox = 1
+    return 1;
+}
+
+/**
+ * Map useSandbox number and PAYSTAND_ENV to environment type
+ * @param {number} [useSandbox] - Environment value (0 = live, 1 = non-live)
+ * @param {string} [paystandEnv] - PAYSTAND_ENV variable ('staging', 'sandbox', or 'development') when useSandbox === 1
+ * @returns {PaystandEnvironment} The environment type
+ */
+export function getPaystandEnvironment(
+    useSandbox?: number,
+    paystandEnv?: string,
+): PaystandEnvironment {
+    // If useSandbox is 0, always use live
+    if (useSandbox === 0) {
+        return 'live';
+    }
+
+    // If useSandbox is 1, use PAYSTAND_ENV to determine which non-live environment
+    if (useSandbox === 1) {
+        if (
+            paystandEnv === 'staging' ||
+            paystandEnv === 'development' ||
+            paystandEnv === 'sandbox'
+        ) {
+            return paystandEnv;
+        }
+
+        // Default to sandbox when useSandbox === 1 and no specific PAYSTAND_ENV is provided
+        return 'sandbox';
+    }
+
+    // Default to live
+    return 'live';
+}
+
+/**
+ * Get domain for a given environment
+ * @param {PaystandEnvironment} environment - The environment type
+ * @returns {string} The domain (com, co, io, or biz)
+ */
+export function getPaystandDomain(environment: PaystandEnvironment): string {
+    return PAYSTAND_ENVIRONMENT_DOMAIN_MAP[environment];
+}
+
+/**
+ * Build full URL for a Paystand endpoint
+ * @param {keyof typeof PAYSTAND_ENDPOINTS} endpoint - The endpoint key
+ * @param {number} [useSandbox] - Environment value (0 = live, 1 = non-live)
+ * @param {string} [paystandEnv] - PAYSTAND_ENV variable ('staging', 'sandbox', or 'development') when useSandbox === 1
+ * @returns {string} The full URL for the endpoint
+ */
+export function getPaystandEndpoint(
+    endpoint: keyof typeof PAYSTAND_ENDPOINTS,
+    useSandbox?: number,
+    paystandEnv?: string,
+): string {
+    // If useSandbox is 0 (live), always use live environment
+    if (useSandbox === 0) {
+        return `${PAYSTAND_BACKEND_URLS.live}${PAYSTAND_ENDPOINTS[endpoint]}`;
+    }
+
+    // If useSandbox is 1 (non-live), use PAYSTAND_ENV to determine environment
+    if (useSandbox === 1) {
+        const env = getPaystandEnvironment(1, paystandEnv || PAYSTAND_ENV);
+
+        return `${PAYSTAND_BACKEND_URLS[env]}${PAYSTAND_ENDPOINTS[endpoint]}`;
+    }
+
+    // If useSandbox is not provided, always default to live
+    // The first call to config endpoint will always go to .com
+    return `${PAYSTAND_BACKEND_URLS.live}${PAYSTAND_ENDPOINTS[endpoint]}`;
 }
