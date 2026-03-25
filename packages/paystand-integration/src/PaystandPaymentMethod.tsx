@@ -1,6 +1,7 @@
 /* eslint-disable */
 import { getScriptLoader } from '@bigcommerce/script-loader';
 import React, { type FunctionComponent, useCallback, useEffect, useState, useRef } from 'react';
+import ReactDOM from 'react-dom';
 
 import {
     type PaymentMethodProps,
@@ -213,11 +214,19 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
         customerPayerId: null,
     });
     const messageHandlerRef = useRef<((event: MessageEvent) => void) | null>(null);
-    // Disable Place Order button when Paystand is selected
+
+    // Read whether T&C is enabled for this store and whether the checkbox is checked.
+    // If T&C is not enabled, we skip the restriction entirely so other merchants are unaffected.
+    const isTermsConditionsRequired =
+        checkoutState.data.getConfig()?.checkoutSettings.enableTermsAndConditions === true;
+    const isTermsAccepted = !isTermsConditionsRequired || paymentForm.getFieldValue<boolean>('terms') === true;
+
+    // Hide the default "Place Order" button and replace it with our portal button.
+    // This mirrors how PayPal Commerce renders its button at the bottom of the form.
     useEffect(() => {
-        paymentForm.disableSubmit(method, true);
+        paymentForm.hidePaymentSubmitButton(method, true);
         return () => {
-            paymentForm.disableSubmit(method, false);
+            paymentForm.hidePaymentSubmitButton(method, false);
         };
     }, []);
 
@@ -271,6 +280,14 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
 
     const handleTokenizePayment = useCallback(async () => {
         try {
+            // Trigger Formik validation — this marks the T&C field as touched
+            // and shows the error message if the checkbox is not checked.
+            const errors = await paymentForm.validateForm();
+            if (errors && Object.keys(errors).length > 0) {
+                paymentForm.setSubmitted(true);
+                return;
+            }
+
             setState((prev) => ({ ...prev, isTokenizing: true, error: null }));
             
             if (!state.config) {
@@ -550,6 +567,21 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
         );
     }
 
+    const portalContainer = document.getElementById('checkout-payment-continue');
+
+    const paystandButton = (
+        <button
+            className="button button--action optimizedCheckout-buttonPrimary"
+            data-test="paystand-tokenize-button"
+            disabled={state.isTokenizing || !state.config || !isTermsAccepted}
+            onClick={handleTokenizePayment}
+            style={{ width: '100%' }}
+            type="button"
+        >
+            {state.isTokenizing ? 'Setting up payment...' : 'Pay with Paystand'}
+        </button>
+    );
+
     return (
         <div data-test="paystand-payment-method">
             {Boolean(state.error) && (
@@ -558,18 +590,11 @@ const PaystandPaymentMethod: FunctionComponent<PaymentMethodProps> = ({
                 </div>
             )}
 
-            <div>
-                <p>Complete your payment securely with Paystand.</p>
-                <button
-                    className="button button--primary"
-                    data-test="paystand-tokenize-button"
-                    disabled={state.isTokenizing || !state.config}
-                    onClick={handleTokenizePayment}
-                    type="button"
-                >
-                    {state.isTokenizing ? 'Setting up payment...' : 'Choose Payment Method'}
-                </button>
-            </div>
+            <p>Complete your payment securely with Paystand.</p>
+
+            {portalContainer
+                ? ReactDOM.createPortal(paystandButton, portalContainer)
+                : paystandButton}
         </div>
     );
 };
