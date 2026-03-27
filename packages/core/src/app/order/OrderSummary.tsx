@@ -56,8 +56,13 @@ const OrderSummary: FunctionComponent<OrderSummaryProps & OrderSummarySubtotalsP
 
             <OrderSummarySection>
                 <OrderSummarySubtotals isTaxIncluded={isTaxIncluded} taxes={taxes} {...orderSummarySubtotalsProps} />
-                {additionalLineItems}
             </OrderSummarySection>
+
+            {additionalLineItems && (
+                <OrderSummarySection>
+                    {additionalLineItems}
+                </OrderSummarySection>
+            )}
 
             <OrderSummarySection>
                 <OrderSummaryTotal
